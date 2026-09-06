@@ -1,0 +1,17 @@
+[package]
+name = "zaru-xmp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reads, merges and writes xmp:Rating / xmp:Label in XMP sidecar files."
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]
+
+[[bin]]
+name = "zaru-mark"
+path = "src/bin/zaru-mark.rs"

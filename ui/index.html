@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zaru</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="idle">
+  <header class="bar bar-top">
+    <span id="folder" class="folder">Zaru</span>
+    <span id="counter" class="counter"></span>
+  </header>
+
+  <main id="stage">
+    <div id="ring"></div>
+
+    <div id="empty" class="card">
+      <h1>Zaru</h1>
+      <p id="empty-msg">Abra uma pasta com arquivos CR3.</p>
+      <button id="open">Abrir pasta</button>
+      <p class="hint">ou aperte <kbd>O</kbd></p>
+    </div>
+  </main>
+
+  <footer class="bar bar-bottom">
+    <div id="rating" class="meter" aria-label="nota">
+      <i></i><i></i><i></i><i></i><i></i>
+    </div>
+    <span id="reject" class="chip chip-reject" hidden>rejeitada</span>
+    <span id="label" class="chip chip-green" hidden>verde</span>
+    <span id="name" class="name"></span>
+    <span class="spacer"></span>
+    <span id="latency" class="latency" title="tempo entre a tecla e a pintura"></span>
+    <button id="config">Ajustes</button>
+  </footer>
+
+  <div id="settings" class="panel" hidden>
+    <h2>Compatibilidade do XMP</h2>
+    <p>
+      Lightroom e darktable discordam do nome do arquivo sidecar. Escolha o que
+      o seu programa lê — a marcação gravada é idêntica nos três casos.
+    </p>
+    <label class="choice">
+      <input type="radio" name="compat" value="lightroom">
+      <span><b>Lightroom</b><code>IMG_4821.xmp</code></span>
+    </label>
+    <label class="choice">
+      <input type="radio" name="compat" value="darktable">
+      <span><b>darktable</b><code>IMG_4821.CR3.xmp</code></span>
+    </label>
+    <label class="choice">
+      <input type="radio" name="compat" value="both">
+      <span>
+        <b>Os dois</b><code>IMG_4821.xmp</code><code>IMG_4821.CR3.xmp</code>
+        <small>Mesmo conteúdo nos dois arquivos. Use se não souber qual o seu
+        programa lê.</small>
+      </span>
+    </label>
+    <p class="hint"><kbd>Esc</kbd> fecha</p>
+  </div>
+
+  <div id="report" class="panel" hidden>
+    <h2>XMP gravado</h2>
+    <dl id="report-body" class="tally"></dl>
+    <p class="hint"><kbd>Esc</kbd> fecha</p>
+  </div>
+
+  <div id="help" class="panel" hidden>
+    <h2>Teclas</h2>
+    <dl class="keys">
+      <dt>K</dt><dd>foto anterior</dd>
+      <dt>H</dt><dd>próxima foto</dd>
+      <dt>A R S T G</dt><dd>1 a 5 estrelas; a mesma tecla zera</dd>
+      <dt>Espaço</dt><dd>etiqueta verde</dd>
+      <dt>Backspace</dt><dd>rejeita e avança</dd>
+      <dt>Ctrl+Z</dt><dd>desfaz</dd>
+      <dt>Ctrl+Shift+Z</dt><dd>refaz</dd>
+      <dt>Ctrl+Enter</dt><dd>grava os .xmp</dd>
+      <dt>O</dt><dd>abrir pasta</dd>
+      <dt>C</dt><dd>ajustes</dd>
+      <dt>?</dt><dd>estas teclas</dd>
+    </dl>
+    <p class="hint"><kbd>Esc</kbd> fecha</p>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

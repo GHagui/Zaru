@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Zaru runs entirely offline against a local folder.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

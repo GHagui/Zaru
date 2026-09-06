@@ -1,0 +1,339 @@
+/* Neobrutalism, with one restriction that comes from the subject and outranks
+   every stylistic choice below it.
+
+   This app exists to judge exposure, focus and colour. The surround must not
+   lie about any of the three. Neutral grey is the standard surface for image
+   evaluation precisely for that reason: any tint in the ground shifts the
+   perception of white, and anything light around a photo makes its shadows
+   read as more closed than they are.
+
+   So the visor is pure neutral grey and nothing else. The brutalism lives in
+   the chrome — the bars, the chips, the panels — which is pinned to the edges
+   of the window and never crosses into the image. */
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: block;
+  src: url("fonts/archivo-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: block;
+  src: url("fonts/archivo-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  --visor: #1C1C1C;
+  --chrome: #E8E6E1;
+  --ink: #000000;
+  --green: #00A651;
+  --reject: #FF3B2F;
+  --star: #FFD400;
+
+  /* Six values. Three of them are semantic and come from meaning, not taste. */
+
+  --rule: 3px;
+  --bar: 46px;
+  /* Offset with no blur. A soft shadow is a different language entirely. */
+  --drop: 5px 5px 0 var(--ink);
+}
+
+* { box-sizing: border-box; }
+
+/* Real black. Brutalism with a softened black (#0B0B0B, #111) loses the whole
+   point — the hardness is the language. */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--visor);
+  color: var(--ink);
+  font: 400 14px/1.45 "Archivo", system-ui, sans-serif;
+  font-stretch: 100%;
+  user-select: none;
+  cursor: default;
+}
+
+/* Frame numbers must not reflow as they change, or the counter dances on every
+   photo and the eye chases the motion instead of reading the frame. */
+.counter, .latency, .name { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------ bars */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: var(--bar);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--chrome);
+  z-index: 2;
+}
+/* The rule that matters is the one facing the image; the other three edges sit
+   against the window frame, where a border would only be a hairline. */
+.bar-top { top: 0; border-bottom: var(--rule) solid var(--ink); }
+.bar-bottom { bottom: 0; border-top: var(--rule) solid var(--ink); }
+.spacer { flex: 1; }
+
+/* The width axis does the hierarchy a second typeface would normally do. */
+.folder {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-stretch: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.counter {
+  font-size: 21px;
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: -0.01em;
+}
+.name { font-weight: 500; font-stretch: 87%; }
+.latency { font-size: 12px; font-weight: 400; font-stretch: 87%; }
+
+/* ------------------------------------------------------- rating and chips */
+
+/* Five hard cells rather than star glyphs: at this border weight a row of
+   filled squares reads as a rating at a glance, and it is the same vocabulary
+   as everything else on the bar. */
+.meter {
+  display: flex;
+  border: var(--rule) solid var(--ink);
+  background: var(--chrome);
+}
+.meter i {
+  width: 17px;
+  height: 22px;
+  border-left: var(--rule) solid var(--ink);
+}
+.meter i:first-child { border-left: 0; }
+.meter i.on { background: var(--star); }
+.meter[hidden] { display: none; }
+
+.chip {
+  padding: 2px 9px;
+  border: var(--rule) solid var(--ink);
+  font-weight: 600;
+  font-stretch: 100%;
+}
+.chip-green { background: var(--green); }
+.chip-reject { background: var(--reject); }
+
+/* Before a folder is open there is nothing to count and nothing to rate, and a
+   placeholder dash in the corner is just noise wearing a value's clothes. */
+body.idle .counter,
+body.idle .meter,
+body.idle .name,
+body.idle .latency,
+body.idle .chip { display: none; }
+
+/* One flash, under 120ms, to answer "did that register?" — and nothing else
+   moves anywhere in this app. */
+@keyframes zaru-flash {
+  50% { filter: invert(1); }
+}
+.flash { animation: zaru-flash 110ms steps(1, end) 1; }
+
+/* --------------------------------------------------------------- visor */
+
+/* The stage never changes size. Portrait and landscape land in the same box,
+   so the user keeps their spatial reference from one frame to the next. */
+#stage {
+  position: fixed;
+  top: var(--bar);
+  bottom: var(--bar);
+  left: 0;
+  right: 0;
+  background: var(--visor);
+  overflow: hidden;
+}
+
+#ring { position: absolute; inset: 0; }
+
+/* The photo gets no border, no shadow and no frame. It is the content; all the
+   rest is the apparatus. And no transition of any kind: a fade between frames
+   is latency wearing a costume. */
+#ring img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  object-fit: contain;
+  visibility: hidden;
+}
+#ring img.shown { visibility: visible; }
+
+/* ------------------------------------------------------ panels and cards */
+
+.card, .panel {
+  background: var(--chrome);
+  border: var(--rule) solid var(--ink);
+  box-shadow: var(--drop);
+  border-radius: 0;
+}
+
+#empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, 84%);
+  padding: 26px 28px;
+  text-align: left;
+}
+#empty[hidden] { display: none; }
+#empty h1 {
+  margin: 0 0 4px;
+  font-size: 34px;
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: -0.02em;
+}
+#empty p { margin: 0 0 20px; }
+#empty .hint { margin-top: 24px; }
+
+.panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(600px, 90vw);
+  max-height: 82vh;
+  overflow: auto;
+  padding: 22px 24px;
+  z-index: 3;
+}
+.panel[hidden] { display: none; }
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 19px;
+  font-weight: 800;
+  font-stretch: 112%;
+}
+.panel > p { margin: 0 0 14px; }
+.panel > p:not(.hint) { max-width: 52ch; }
+/* Counts read as a column, so the eye compares them without hunting. */
+.tally {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 7px 14px;
+  margin: 0;
+  align-items: baseline;
+}
+.tally dt {
+  justify-self: end;
+  font-size: 19px;
+  font-weight: 800;
+  font-stretch: 112%;
+  font-variant-numeric: tabular-nums;
+}
+.tally dd { margin: 0; }
+.tally + .hint { margin-top: 28px; }
+.tally .failure { grid-column: 1 / -1; justify-self: start; font-weight: 700; }
+
+.keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 0;
+  align-items: center;
+}
+.keys dd { margin: 0; font-stretch: 87%; }
+
+/* The key names are the same objects as the `Esc` below the list, so they are
+   drawn the same way. */
+.keys dt, kbd {
+  justify-self: start;
+  padding: 2px 7px;
+  border: 2px solid var(--ink);
+  background: #FFF;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-size: 13px;
+}
+
+/* A hard rule, not a gap, is what separates a block from its footnote here. */
+.hint {
+  margin: 22px 0 0;
+  padding-top: 12px;
+  border-top: var(--rule) solid var(--ink);
+  font-stretch: 87%;
+}
+
+/* ------------------------------------------------------------- controls */
+
+/* Radios and buttons are square, bordered and press by displacement — the
+   shadow is under them, so pushing them into it is the whole affordance. */
+.choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  cursor: pointer;
+}
+.choice input {
+  appearance: none;
+  flex: none;
+  width: 19px;
+  height: 19px;
+  margin: 2px 0 0;
+  border: var(--rule) solid var(--ink);
+  background: #FFF;
+  cursor: pointer;
+}
+.choice input:checked { background: var(--ink); box-shadow: inset 0 0 0 3px #FFF; }
+.choice span { display: block; }
+.choice b { font-weight: 700; margin-right: 8px; }
+.choice small { display: block; margin-top: 5px; font-size: 13px; font-stretch: 87%; }
+
+button {
+  font: inherit;
+  font-weight: 700;
+  font-stretch: 100%;
+  padding: 6px 14px;
+  color: var(--ink);
+  background: var(--chrome);
+  border: var(--rule) solid var(--ink);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+}
+/* Instant, not animated. Displacement is a state, not a transition. */
+button:active {
+  transform: translate(4px, 4px);
+  box-shadow: none;
+}
+
+code {
+  padding: 1px 6px;
+  margin-right: 6px;
+  border: 2px solid var(--ink);
+  background: #FFF;
+  font: inherit;
+  font-stretch: 87%;
+  font-weight: 500;
+}
+kbd { font: inherit; }
+
+:focus-visible { outline: var(--rule) solid var(--ink); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flash { animation: none; }
+}

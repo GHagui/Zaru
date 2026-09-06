@@ -1,0 +1,13 @@
+[package]
+name = "zaru-cr3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Extracts the camera-generated JPEG preview and orientation from Canon CR3 files."
+
+[dependencies]
+
+[[bin]]
+name = "zaru-probe"
+path = "src/bin/zaru-probe.rs"

@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/zaru-core", "crates/zaru-cr3", "crates/zaru-xmp", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/GHagui/Zaru"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

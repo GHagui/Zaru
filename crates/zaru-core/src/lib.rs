@@ -6,12 +6,13 @@
 //! matters, because the machine this is developed on has no display.
 
 pub mod collections;
+pub mod keymap;
 pub mod prefetch;
 pub mod recovery;
 pub mod session;
 pub mod settings;
 
-pub use collections::MAX_COLLECTIONS;
+pub use keymap::Keymap;
 pub use prefetch::{Frame, Prefetch};
 pub use recovery::{Recovery, RecoveryOffer};
 pub use session::{

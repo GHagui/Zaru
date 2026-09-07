@@ -57,7 +57,24 @@ const photos = Array.from({ length: 1240 }, (_, i) => ({
 const marks = photos.map(() => ({ rating: 0, label: null }));
 const assigned = photos.map(() => null);
 const collections = [];
-let settings = { xmpCompat: "lightroom" };
+const defaultKeymap = {
+  prev: "k", next: "h",
+  star1: "a", star2: "r", star3: "s", star4: "t", star5: "g",
+  label: " ", reject: "Backspace",
+  zoom: "z", compare: "v", filter: "d",
+  newCollection: "n", moveTo: "m", open: "o", settings: "c", help: "?",
+  collections: ["q","w","f","p","b","j","l","u","y",";"],
+};
+let settings = { xmpCompat: "lightroom", keymap: structuredClone(defaultKeymap) };
+const ACTION_LABELS = [
+  ["prev","foto anterior"],["next","próxima foto"],
+  ["star1","1 estrela"],["star2","2 estrelas"],["star3","3 estrelas"],
+  ["star4","4 estrelas"],["star5","5 estrelas"],
+  ["label","etiqueta verde"],["reject","rejeitar e avançar"],
+  ["zoom","zoom 1:1"],["compare","comparar"],["filter","filtrar"],
+  ["newCollection","nova coleção"],["moveTo","lista de coleções"],
+  ["open","abrir pasta"],["settings","ajustes"],["help","teclas"],
+];
 const at = (index) => ({ index, mark: marks[index], collection: assigned[index] });
 const commands = {
   pick_folder: () => "D:\\\\fotos\\\\2026-09-05-interlagos",
@@ -97,8 +114,32 @@ const commands = {
     assigned[index] = collection;
     return at(index);
   },
-  undo: () => null,
-  redo: () => null,
+  assign_burst: ({ index, collection }) => {
+    const b = photos[index].burst;
+    const out = [];
+    photos.forEach((p, i) => {
+      if (p.burst !== b) return;
+      assigned[i] = collection;
+      out.push(at(i));
+    });
+    return out;
+  },
+  key_actions: () => ACTION_LABELS,
+  bind_key: ({ action, key }) => {
+    const flat = [
+      ...ACTION_LABELS.map(([id]) => [id, settings.keymap[id]]),
+      ...settings.keymap.collections.map((k, i) => ["collection" + (i + 1), k]),
+    ];
+    const clash = flat.find(([id, k]) => id !== action && k.toLowerCase() === key.toLowerCase());
+    if (clash) throw new Error(key + " já está em " + clash[0]);
+    const c = action.match(/^collection(\d+)$/);
+    if (c) settings.keymap.collections[Number(c[1]) - 1] = key;
+    else settings.keymap[action] = key;
+    return settings.keymap;
+  },
+  reset_keymap: () => (settings.keymap = structuredClone(defaultKeymap)),
+  undo: () => [],
+  redo: () => [],
   plan: () => ({
     evaluated: 487, sidecars: 312, rejected: 103, untouched: 753,
     moves: [
@@ -186,12 +227,12 @@ window.__TAURI__ = {
   await press("v");
   await press("Escape");
 
-  await press("f");
+  await press("d");
   await shot("filter");
-  await press("3");
-  await shot("filtered");
   await press("f");
-  await press("1");
+  await shot("filtered");
+  await press("d");
+  await press("q");
 
   // Phase 3: a collection, the picker, and the Apply preview.
   await press("n");
@@ -200,7 +241,7 @@ window.__TAURI__ = {
   await page.keyboard.press("Enter");
   await page.waitForTimeout(200);
   await shot("move");
-  await press("1");
+  await press("q");
 
   await press("n");
   await page.fill("#collection-name", "ferrari");
@@ -210,8 +251,14 @@ window.__TAURI__ = {
   await press("h");
   await press("m");
   await shot("move-two");
-  await press("2");
+  await press("Escape");
+
+  // One key sends the photo; the same key with Alt sends the whole burst.
+  await press("w");
   await shot("assigned");
+  await page.keyboard.press("Alt+q");
+  await page.waitForTimeout(200);
+  await shot("burst-assigned");
 
   await page.keyboard.press("Control+Enter");
   await shot("apply");
@@ -219,6 +266,9 @@ window.__TAURI__ = {
 
   await press("c");
   await shot("settings");
+  await page.locator('.keyrow[data-action="zoom"]').click();
+  await shot("keymap-capture");
+  await press("Escape");
   await press("Escape");
 
   await press("?");

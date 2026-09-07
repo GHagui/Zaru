@@ -17,10 +17,12 @@ const BEHIND = 3;
 /// and a spare without evicting anything the pass is about to need.
 const RING = AHEAD + BEHIND + 3;
 
-/// A R S T G sit under the home row in Colemak-DH. `event.key` is what makes
-/// that work: `event.code` reports the physical QWERTY position, which differs
-/// depending on whether the layout lives in the OS or in the keyboard firmware.
-const STARS = { a: 1, r: 2, s: 3, t: 4, g: 5 };
+/// Held down, an action applies to the whole burst instead of one frame.
+///
+/// Alt and not Shift, because Shift changes `event.key` itself: a collection
+/// bound to `;` would arrive as `:` and match nothing. Alt leaves the key alone
+/// whatever it is, so every binding works the same way.
+const BURST_MODIFIER = "altKey";
 
 /// `xmp:Label` stores the colour under its standard English name, which is
 /// what every other program expects to read. The chip shows it in Portuguese.
@@ -69,7 +71,11 @@ const dom = {
   reportTitle: el("report-title"),
   reportBody: el("report-body"),
   settings: el("settings"),
+  keymapList: el("keymap"),
+  keymapError: el("keymap-error"),
+  keymapReset: el("keymap-reset"),
   help: el("help"),
+  helpKeys: el("help-keys"),
 };
 
 /// What a filter lets through. Order is the order of the digits in the picker.
@@ -99,6 +105,12 @@ const state = {
   pinned: null,
   view: { scale: 1, x: 0, y: 0 },
   slots: [],
+  /// Bindings, and the reverse lookup the key handler actually uses.
+  keymap: null,
+  actionLabels: new Map(),
+  byKey: new Map(),
+  /// The action waiting to be given a key in the settings screen.
+  capturing: null,
 };
 
 const current = () => state.visible[state.at] ?? 0;
@@ -485,10 +497,14 @@ function flash(node) {
 /// user cannot see what changed. A filter may be hiding it, in which case the
 /// filter has to give way — the repair matters more than the view.
 async function applyJump(promise) {
-  const change = await promise;
-  if (!change) return;
-  state.marks[change.index] = change.mark;
-  state.assigned[change.index] = change.collection;
+  const changes = await promise;
+  if (!changes?.length) return;
+  for (const c of changes) {
+    state.marks[c.index] = c.mark;
+    state.assigned[c.index] = c.collection;
+  }
+  // Land on the first photo the step touched.
+  const change = changes[0];
 
   let position = state.visible.indexOf(change.index);
   if (position < 0) {
@@ -588,7 +604,7 @@ function startFilter() {
 
     const li = document.createElement("li");
     const key = document.createElement("kbd");
-    key.textContent = String(i + 1);
+    key.textContent = showKey(pickerKey(i));
     const label = document.createElement("span");
     label.textContent = filter.name;
     if (i === state.filter) label.className = "chosen";
@@ -647,7 +663,7 @@ function startMove() {
       const li = document.createElement("li");
 
       const key = document.createElement("kbd");
-      key.textContent = String(c + 1);
+      key.textContent = showKey(pickerKey(c));
 
       const label = document.createElement("span");
       const chip = document.createElement("span");
@@ -669,7 +685,54 @@ function startMove() {
 
 function chooseCollection(collection) {
   closeModal();
-  applyChange(invoke("assign", { index: current(), collection }), dom.collection);
+  applyChange(
+    invoke("assign", { index: current(), collection }),
+    dom.collection,
+  );
+}
+
+/// The key that picks the nth item in any list. The collections row doubles as
+/// a generic picker row, because a 42-key split has no number row and every
+/// list in this app is short.
+function pickerKey(i) {
+  return state.keymap?.collections?.[i] ?? String(i + 1);
+}
+
+/// Puts the current photo — or its whole burst — in a collection.
+///
+/// This is the hot path of a sorting pass, so it goes straight from the key to
+/// the command: no picker, nothing drawn over the photo being judged. Pressing
+/// the key of the collection a photo is already in takes it out again, the same
+/// way pressing a rating it already has clears it.
+function assignTo(collection, wholeBurst) {
+  const index = current();
+  const target = state.assigned[index] === collection ? null : collection;
+  if (!wholeBurst) {
+    applyChange(invoke("assign", { index, collection: target }), dom.collection);
+    return;
+  }
+  applyMany(invoke("assign_burst", { index, collection: target }));
+}
+
+/// Applies a change that touched several photos at once, without moving.
+async function applyMany(promise) {
+  const changes = await promise;
+  if (!changes?.length) return;
+  for (const change of changes) {
+    state.marks[change.index] = change.mark;
+    state.assigned[change.index] = change.collection;
+  }
+  renderStatus();
+  flash(dom.collection);
+}
+
+/// A collection key pressed before that collection exists.
+function flashCollectionHint(which) {
+  dom.collection.hidden = false;
+  dom.collection.textContent = `coleção ${which + 1} não existe`;
+  dom.collection.style.setProperty("--chip", "var(--chrome)");
+  flash(dom.collection);
+  setTimeout(renderStatus, 900);
 }
 
 // ---------------------------------------------------------------- apply
@@ -794,20 +857,37 @@ function closeModal() {
 /// Keys a modal claims for itself. A mode with no entry here swallows
 /// everything except Escape, which is what the new-collection field needs:
 /// its keys have to reach the input, not the culling shortcuts.
+/// Which row of a picker a key selects, or -1.
+function pickedRow(e, rows) {
+  const key = normalise(e.key);
+  for (let i = 0; i < rows; i++) {
+    if (normalise(pickerKey(i)) === key) return i;
+  }
+  return -1;
+}
+
 const MODAL_KEYS = {
   move(e) {
-    if (e.key >= "0" && e.key <= "9") {
+    const row = pickedRow(e, state.collections.length);
+    if (row >= 0) {
       e.preventDefault();
-      const digit = Number(e.key);
-      if (digit === 0) return chooseCollection(null);
-      if (digit <= state.collections.length) chooseCollection(digit - 1);
+      chooseCollection(row);
+      return;
+    }
+    // The same key that opens the list clears the collection, so taking a photo
+    // out never needs a key of its own.
+    if (normalise(e.key) === normalise(state.keymap?.moveTo ?? "m")) {
+      e.preventDefault();
+      closeModal();
+      applyChange(invoke("assign", { index: current(), collection: null }), dom.collection);
     }
   },
   filter(e) {
-    if (e.key >= "1" && e.key <= String(FILTERS.length)) {
+    const row = pickedRow(e, FILTERS.length);
+    if (row >= 0) {
       e.preventDefault();
       closeModal();
-      setFilter(Number(e.key) - 1);
+      setFilter(row);
     }
   },
   apply(e) {
@@ -824,16 +904,149 @@ const MODAL_KEYS = {
   },
 };
 
+/// A binding is a `KeyboardEvent.key`, and a letter arrives uppercased when a
+/// modifier is down. Comparing in lower case makes `Alt+Q` and `q` one key.
+function normalise(key) {
+  return key.length === 1 ? key.toLowerCase() : key;
+}
+
+function adoptKeymap(keymap) {
+  state.keymap = keymap;
+  state.byKey = new Map();
+  const bind = (key, action) => state.byKey.set(normalise(key), action);
+
+  for (const [action, key] of Object.entries(keymap)) {
+    if (action === "collections") continue;
+    bind(key, action);
+  }
+  keymap.collections.forEach((key, i) => bind(key, `collection${i + 1}`));
+
+  renderKeymapEditor();
+  renderHelp();
+}
+
+/// The label for an action, including the collections, which are numbered
+/// rather than named because a collection is created after the key exists.
+function actionLabel(action) {
+  const collection = action.match(/^collection(\d+)$/);
+  if (collection) return `coleção ${collection[1]}`;
+  return state.actionLabels.get(action) ?? action;
+}
+
+function showKey(key) {
+  if (key === " ") return "espaço";
+  return key;
+}
+
+function renderKeymapEditor() {
+  if (!state.keymap) return;
+  dom.keymapList.replaceChildren();
+
+  const rows = [
+    ...[...state.actionLabels.keys()].map((id) => [id, state.keymap[id]]),
+    ...state.keymap.collections.map((key, i) => [`collection${i + 1}`, key]),
+  ];
+
+  for (const [action, key] of rows) {
+    const row = document.createElement("button");
+    row.className = "keyrow";
+    row.dataset.action = action;
+
+    const label = document.createElement("span");
+    label.textContent = actionLabel(action);
+    const cap = document.createElement("kbd");
+    cap.textContent = showKey(key ?? "");
+
+    row.append(label, cap);
+    row.addEventListener("click", () => startCapture(action));
+    dom.keymapList.append(row);
+  }
+}
+
+function startCapture(action) {
+  stopCapture();
+  state.capturing = action;
+  dom.keymapError.hidden = true;
+  for (const row of dom.keymapList.children) {
+    if (row.dataset.action !== action) continue;
+    row.classList.add("capturing");
+    row.querySelector("kbd").textContent = "aperte";
+  }
+}
+
+function stopCapture() {
+  state.capturing = null;
+  for (const row of dom.keymapList.children) row.classList.remove("capturing");
+  renderKeymapEditor();
+}
+
+async function captureKey(key) {
+  const action = state.capturing;
+  stopCapture();
+  try {
+    adoptKeymap(await invoke("bind_key", { action, key }));
+  } catch (e) {
+    dom.keymapError.textContent = String(e);
+    dom.keymapError.hidden = false;
+  }
+}
+
 async function loadSettings() {
-  const settings = await invoke("get_settings");
+  const [settings, actions] = await Promise.all([
+    invoke("get_settings"),
+    invoke("key_actions"),
+  ]);
+  state.actionLabels = new Map(actions);
+  adoptKeymap(settings.keymap);
+
   for (const input of document.querySelectorAll('input[name="compat"]')) {
     input.checked = input.value === settings.xmpCompat;
     input.addEventListener("change", () => {
       if (input.checked) {
-        invoke("set_settings", { settings: { xmpCompat: input.value } }).catch(() => {});
+        invoke("set_settings", {
+          settings: { xmpCompat: input.value, keymap: state.keymap },
+        }).catch(() => {});
       }
     });
   }
+}
+
+/// The help screen is generated, so it can never drift from what the keys
+/// actually do — which is the whole risk once the map is editable.
+function renderHelp() {
+  if (!state.keymap) return;
+  dom.helpKeys.replaceChildren();
+  const row = (key, what) => {
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    const dd = document.createElement("dd");
+    dd.textContent = what;
+    dom.helpKeys.append(dt, dd);
+  };
+
+  const k = state.keymap;
+  row(showKey(k.prev), "foto anterior");
+  row(showKey(k.next), "próxima foto");
+  row(`Alt+${showKey(k.prev)} / Alt+${showKey(k.next)}`, "rajada anterior / próxima");
+  row(
+    [k.star1, k.star2, k.star3, k.star4, k.star5].map(showKey).join(" "),
+    "1 a 5 estrelas; a mesma tecla zera",
+  );
+  row(showKey(k.label), "etiqueta verde");
+  row(showKey(k.reject), "rejeita e avança");
+  row(k.collections.map(showKey).join(" "), "manda para a coleção 1, 2, 3…");
+  row(`Alt+${showKey(k.collections[0] ?? "")}`, "manda a rajada inteira");
+  row(showKey(k.newCollection), "nova coleção");
+  row(showKey(k.moveTo), "lista de coleções");
+  row(showKey(k.zoom), "alterna 1:1 e ajustado");
+  row(showKey(k.compare), "fixa esta foto para comparar");
+  row(showKey(k.filter), "filtrar o que aparece");
+  row("Ctrl+Z / Ctrl+Shift+Z", "desfaz / refaz");
+  row("Ctrl+Enter", "aplicar: grava os .xmp e move os arquivos");
+  row("Esc", "volta ao enquadramento inteiro");
+  row(showKey(k.open), "abrir pasta");
+  row(showKey(k.settings), "ajustes");
+  row(showKey(k.help), "estas teclas");
 }
 
 // -------------------------------------------------------------- keyboard
@@ -841,10 +1054,17 @@ async function loadSettings() {
 document.addEventListener("keydown", (e) => {
   // `event.key`, never `event.code`: with Colemak-DH in the OS, the R key
   // reports `KeyS`, because that is its QWERTY position.
-  const key = e.key;
+  const key = normalise(e.key);
 
   if (state.modal) {
-    if (key === "Escape") {
+    // A row waiting for a key takes the very next one, whatever it is.
+    if (state.capturing) {
+      e.preventDefault();
+      if (e.key === "Escape") return stopCapture();
+      if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+      return void captureKey(e.key);
+    }
+    if (e.key === "Escape") {
       e.preventDefault();
       closeModal();
       return;
@@ -853,93 +1073,104 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
+  // Undo and apply are the two things that stay on their conventional keys:
+  // they are not culling actions, and Ctrl+Z means Ctrl+Z everywhere.
   if (e.ctrlKey || e.metaKey) {
-    const lower = key.toLowerCase();
-    if (lower === "z") {
+    if (key === "z") {
       e.preventDefault();
       applyJump(invoke(e.shiftKey ? "redo" : "undo"));
-    } else if (key === "Enter") {
+    } else if (e.key === "Enter") {
       e.preventDefault();
       openApply();
     }
     return;
   }
 
-  if (key === "o" || key === "O") {
-    e.preventDefault();
-    pickFolder();
-    return;
-  }
-  if (key === "c" || key === "C") {
-    e.preventDefault();
-    openModal("settings");
-    return;
-  }
-  if (key === "?") {
-    e.preventDefault();
-    openModal("help");
-    return;
-  }
+  const action = state.byKey.get(key);
 
-  if (!state.photos.length) return;
-  const index = current();
-
-  switch (key.toLowerCase()) {
-    case "h":
+  switch (action) {
+    case "open":
       e.preventDefault();
-      if (e.shiftKey) gotoBurst(1);
+      pickFolder();
+      return;
+    case "settings":
+      e.preventDefault();
+      openModal("settings");
+      return;
+    case "help":
+      e.preventDefault();
+      openModal("help");
+      return;
+  }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    resetView();
+    return;
+  }
+
+  if (!state.photos.length || !action) return;
+  const index = current();
+  const whole = e[BURST_MODIFIER];
+
+  const collection = action.match(/^collection(\d+)$/);
+  if (collection) {
+    e.preventDefault();
+    const which = Number(collection[1]) - 1;
+    // A key for a collection that has not been created yet says so rather than
+    // doing nothing, which would read as a dropped keystroke.
+    if (which >= state.collections.length) return void flashCollectionHint(which);
+    return void assignTo(which, whole);
+  }
+
+  switch (action) {
+    case "next":
+      e.preventDefault();
+      if (whole) gotoBurst(1);
       else goto(state.at + 1, performance.now());
       return;
-    case "k":
+    case "prev":
       e.preventDefault();
-      if (e.shiftKey) gotoBurst(-1);
+      if (whole) gotoBurst(-1);
       else goto(state.at - 1, performance.now());
       return;
-    case "z":
+    case "zoom":
       e.preventDefault();
       toggleNative();
       return;
-    case "v":
+    case "compare":
       e.preventDefault();
       togglePin();
       return;
-    case "f":
+    case "filter":
       e.preventDefault();
       startFilter();
       return;
-    case "n":
+    case "newCollection":
       e.preventDefault();
       startNewCollection();
       return;
-    case "m":
+    case "moveTo":
       e.preventDefault();
       startMove();
       return;
-  }
-
-  switch (key) {
-    case " ":
+    case "label":
       e.preventDefault();
       applyChange(invoke("toggle_label", { index }), dom.label);
       return;
-    case "Backspace":
+    case "reject":
       e.preventDefault();
       // Rejection is the only mark that advances, because it is terminal:
       // there is nothing else to decide about this frame.
       applyChange(invoke("toggle_reject", { index }), dom.reject);
       goto(state.at + 1);
       return;
-    case "Escape":
-      e.preventDefault();
-      resetView();
-      return;
   }
 
-  const stars = STARS[key.toLowerCase()];
-  if (stars !== undefined) {
+  const star = action.match(/^star(\d)$/);
+  if (star) {
     e.preventDefault();
     // A rating never advances. The user rates, looks again, then moves on.
-    applyChange(invoke("set_star", { index, stars }), dom.rating);
+    applyChange(invoke("set_star", { index, stars: Number(star[1]) }), dom.rating);
   }
 });
 
@@ -1004,6 +1235,12 @@ el("open").addEventListener("click", pickFolder);
 el("config").addEventListener("click", () => openModal("settings"));
 dom.applyGo.addEventListener("click", confirmApply);
 dom.recoveryGo.addEventListener("click", restoreSession);
+
+dom.keymapReset.addEventListener("click", async () => {
+  stopCapture();
+  dom.keymapError.hidden = true;
+  adoptKeymap(await invoke("reset_keymap"));
+});
 
 dom.collectionName.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {

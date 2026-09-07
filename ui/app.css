@@ -213,6 +213,37 @@ input[type="text"]:focus-visible {
 .blockers li { margin: 2px 0; }
 
 .hint button { margin-right: 12px; }
+
+/* One rebindable action per row: what it does on the left, the key on the
+   right. Pressing a row makes it wait for whatever key comes next. */
+.keymap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 4px 10px;
+}
+.keyrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px 4px 10px;
+  font: inherit;
+  font-stretch: 87%;
+  font-weight: 500;
+  text-align: left;
+  background: none;
+  border: 2px solid transparent;
+  box-shadow: none;
+}
+.keyrow:hover { border-color: var(--ink); }
+.keyrow kbd { min-width: 34px; text-align: center; }
+.keyrow.capturing { border-color: var(--ink); background: var(--star); }
+
+.panel h2.section {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: var(--rule) solid var(--ink);
+}
 button[disabled] {
   cursor: not-allowed;
   color: #0007;
@@ -329,12 +360,14 @@ body.idle #stage { cursor: default; }
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(600px, 90vw);
-  max-height: 82vh;
+  max-height: 88vh;
   overflow: auto;
   padding: 22px 24px;
   z-index: 3;
 }
 .panel[hidden] { display: none; }
+/* The settings panel carries the whole key map, so it gets room for it. */
+#settings { width: min(820px, 94vw); }
 .panel h2 {
   margin: 0 0 10px;
   font-size: 19px;

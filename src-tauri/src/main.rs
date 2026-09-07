@@ -15,8 +15,9 @@ use std::sync::Mutex;
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use zaru_core::keymap::ACTIONS;
 use zaru_core::{
-    ApplyPlan, ApplyReport, Frame, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    ApplyPlan, ApplyReport, Frame, Keymap, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
     SessionView, Settings,
 };
 
@@ -108,13 +109,13 @@ fn toggle_label(state: State<'_, AppState>, index: usize) -> Option<PhotoChange>
 }
 
 #[tauri::command]
-fn undo(state: State<'_, AppState>) -> Option<PhotoChange> {
-    changed(&state, state.session.lock().unwrap().undo())
+fn undo(state: State<'_, AppState>) -> Vec<PhotoChange> {
+    touched(&state, state.session.lock().unwrap().undo())
 }
 
 #[tauri::command]
-fn redo(state: State<'_, AppState>) -> Option<PhotoChange> {
-    changed(&state, state.session.lock().unwrap().redo())
+fn redo(state: State<'_, AppState>) -> Vec<PhotoChange> {
+    touched(&state, state.session.lock().unwrap().redo())
 }
 
 fn changed<T>(state: &AppState, outcome: Option<T>) -> Option<T> {
@@ -122,6 +123,13 @@ fn changed<T>(state: &AppState, outcome: Option<T>) -> Option<T> {
         state.dirty.store(true, Ordering::Relaxed);
     }
     outcome
+}
+
+fn touched(state: &AppState, changes: Vec<PhotoChange>) -> Vec<PhotoChange> {
+    if !changes.is_empty() {
+        state.dirty.store(true, Ordering::Relaxed);
+    }
+    changes
 }
 
 #[tauri::command]
@@ -143,8 +151,10 @@ fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settin
 /// the user walks away from leaves no empty folders behind.
 #[tauri::command]
 fn new_collection(state: State<'_, AppState>, name: String) -> Result<Vec<String>, String> {
+    // The key map is the cap: a collection no key reaches is not worth having.
+    let limit = state.settings.lock().unwrap().keymap.collections.len();
     let mut session = state.session.lock().unwrap();
-    session.new_collection(&name)?;
+    session.new_collection(&name, limit)?;
     state.dirty.store(true, Ordering::Relaxed);
     Ok(session.collections().to_vec())
 }
@@ -156,6 +166,47 @@ fn assign(
     collection: Option<usize>,
 ) -> Option<PhotoChange> {
     changed(&state, state.session.lock().unwrap().assign(index, collection))
+}
+
+/// Sends the whole burst at `index` to one collection, as one undoable step.
+#[tauri::command]
+fn assign_burst(
+    state: State<'_, AppState>,
+    index: usize,
+    collection: Option<usize>,
+) -> Vec<PhotoChange> {
+    touched(&state, state.session.lock().unwrap().assign_burst(index, collection))
+}
+
+/// Every rebindable action, with the label the settings screen shows.
+#[tauri::command]
+fn key_actions() -> Vec<(String, String)> {
+    ACTIONS
+        .iter()
+        .map(|(id, label)| ((*id).to_string(), (*label).to_string()))
+        .collect()
+}
+
+/// Moves one action onto one key, refusing anything that would leave two
+/// actions sharing it.
+#[tauri::command]
+fn bind_key(state: State<'_, AppState>, action: String, key: String) -> Result<Keymap, String> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.keymap.set(&action, &key)?;
+    settings
+        .save(&state.config_dir)
+        .map_err(|e| format!("não deu para salvar: {e}"))?;
+    Ok(settings.keymap.clone())
+}
+
+#[tauri::command]
+fn reset_keymap(state: State<'_, AppState>) -> Result<Keymap, String> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.keymap = Keymap::default();
+    settings
+        .save(&state.config_dir)
+        .map_err(|e| format!("não deu para salvar: {e}"))?;
+    Ok(settings.keymap.clone())
 }
 
 /// What the last session left behind for this folder, if it still fits.
@@ -265,8 +316,12 @@ fn main() {
             redo,
             get_settings,
             set_settings,
+            key_actions,
+            bind_key,
+            reset_keymap,
             new_collection,
             assign,
+            assign_burst,
             plan,
             apply,
             recovery_offer,

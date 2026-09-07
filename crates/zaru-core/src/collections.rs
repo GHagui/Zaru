@@ -5,13 +5,6 @@
 //! so the constraints are the filesystem's rather than the app's, and the
 //! strictest filesystem in play is Windows'.
 
-/// How many collections the keyboard can reach.
-///
-/// `M` picks by a single digit, `1` through `9`, because two keystrokes with no
-/// typing is the whole point of the shortcut. A tenth collection would have no
-/// key, so the limit is real rather than arbitrary.
-pub const MAX_COLLECTIONS: usize = 9;
-
 /// Reserved on Windows whatever extension follows them, so `CON` and `CON.raw`
 /// are both refused.
 const RESERVED: &[&str] = &[

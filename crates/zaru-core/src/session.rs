@@ -13,7 +13,7 @@ use serde::Serialize;
 use zaru_cr3::Cr3Info;
 use zaru_xmp::{Marks, SidecarStyle, REJECTED};
 
-use crate::collections::{validate, MAX_COLLECTIONS};
+use crate::collections::validate;
 use crate::recovery::Recovery;
 
 /// Frames closer together than this belong to the same burst.
@@ -118,6 +118,10 @@ pub struct WriteReport {
 enum Change {
     Mark { index: usize, before: Marks, after: Marks },
     Assign { index: usize, before: Option<usize>, after: Option<usize> },
+    /// A whole burst sent to one collection. It was one keystroke, so it is one
+    /// step of undo — taking twelve presses of Ctrl+Z to walk back one press of
+    /// the collection key would be its own kind of wrong.
+    AssignBurst { before: Vec<(usize, Option<usize>)>, after: Option<usize> },
 }
 
 #[derive(Default)]
@@ -287,13 +291,16 @@ impl Session {
     /// Registers a collection. The folder is not created here — nothing on disk
     /// changes until Apply, so abandoning a session leaves no empty folders
     /// behind.
-    pub fn new_collection(&mut self, name: &str) -> Result<usize, String> {
+    ///
+    /// `limit` is how many collection keys are bound: a collection the keyboard
+    /// cannot reach is not worth having, so the key map is what caps this.
+    pub fn new_collection(&mut self, name: &str, limit: usize) -> Result<usize, String> {
         if self.photos.is_empty() {
             return Err("abra uma pasta antes de criar coleções".into());
         }
-        if self.collections.len() >= MAX_COLLECTIONS {
+        if self.collections.len() >= limit {
             return Err(format!(
-                "o limite é {MAX_COLLECTIONS} coleções, uma por tecla de 1 a 9"
+                "o limite é {limit} coleções, uma por tecla mapeada"
             ));
         }
         let name = validate(name, &self.collections)?;
@@ -322,22 +329,59 @@ impl Session {
         Some(self.change_at(index))
     }
 
+    /// Sends every frame of `index`'s burst to one collection.
+    ///
+    /// In a motorsport pass a burst is one car through one corner, so it almost
+    /// always belongs in one place. Deciding that twelve times is twelve chances
+    /// to slip, and twelve keystrokes for one decision.
+    pub fn assign_burst(&mut self, index: usize, collection: Option<usize>) -> Vec<PhotoChange> {
+        if index >= self.photos.len() {
+            return Vec::new();
+        }
+        if let Some(c) = collection {
+            if c >= self.collections.len() {
+                return Vec::new();
+            }
+        }
+
+        let burst = self.bursts[index];
+        let members: Vec<usize> = (0..self.photos.len())
+            .filter(|i| self.bursts[*i] == burst)
+            .collect();
+
+        let before: Vec<(usize, Option<usize>)> =
+            members.iter().map(|i| (*i, self.assigned[*i])).collect();
+        for i in &members {
+            self.assigned[*i] = collection;
+        }
+        if before.iter().any(|(_, was)| *was != collection) {
+            self.undo.push(Change::AssignBurst { before, after: collection });
+            self.redo.clear();
+        }
+        members.into_iter().map(|i| self.change_at(i)).collect()
+    }
+
     // ---------------------------------------------------------------- undo
 
     /// Undo is not a nicety here. In a forty-frame burst the user will hit the
     /// wrong key, and without undo the only repair is to find the frame again.
-    pub fn undo(&mut self) -> Option<PhotoChange> {
-        let change = self.undo.pop()?;
-        let index = self.rewind(&change, Direction::Back);
+    /// Returns every photo the step touched, the one to look at first.
+    pub fn undo(&mut self) -> Vec<PhotoChange> {
+        let Some(change) = self.undo.pop() else {
+            return Vec::new();
+        };
+        let touched = self.rewind(&change, Direction::Back);
         self.redo.push(change);
-        Some(self.change_at(index))
+        touched.into_iter().map(|i| self.change_at(i)).collect()
     }
 
-    pub fn redo(&mut self) -> Option<PhotoChange> {
-        let change = self.redo.pop()?;
-        let index = self.rewind(&change, Direction::Forward);
+    pub fn redo(&mut self) -> Vec<PhotoChange> {
+        let Some(change) = self.redo.pop() else {
+            return Vec::new();
+        };
+        let touched = self.rewind(&change, Direction::Forward);
         self.undo.push(change);
-        Some(self.change_at(index))
+        touched.into_iter().map(|i| self.change_at(i)).collect()
     }
 
     // --------------------------------------------------------------- apply
@@ -526,21 +570,30 @@ impl Session {
         Some(self.change_at(index))
     }
 
-    fn rewind(&mut self, change: &Change, direction: Direction) -> usize {
+    fn rewind(&mut self, change: &Change, direction: Direction) -> Vec<usize> {
         match change {
             Change::Mark { index, before, after } => {
                 self.marks[*index] = match direction {
                     Direction::Back => before.clone(),
                     Direction::Forward => after.clone(),
                 };
-                *index
+                vec![*index]
             }
             Change::Assign { index, before, after } => {
                 self.assigned[*index] = match direction {
                     Direction::Back => *before,
                     Direction::Forward => *after,
                 };
-                *index
+                vec![*index]
+            }
+            Change::AssignBurst { before, after } => {
+                for (index, was) in before {
+                    self.assigned[*index] = match direction {
+                        Direction::Back => *was,
+                        Direction::Forward => *after,
+                    };
+                }
+                before.iter().map(|(index, _)| *index).collect()
             }
         }
     }

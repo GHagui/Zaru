@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use zaru_xmp::SidecarStyle;
 
+use crate::keymap::Keymap;
+
 /// Which sidecar filenames Zaru writes.
 ///
 /// Lightroom looks for `IMG_4821.xmp`; darktable writes `IMG_4821.CR3.xmp`.
@@ -41,6 +43,7 @@ impl XmpCompat {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub xmp_compat: XmpCompat,
+    pub keymap: Keymap,
 }
 
 impl Settings {

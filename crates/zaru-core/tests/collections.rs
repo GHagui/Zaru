@@ -3,11 +3,23 @@
 
 use std::path::{Path, PathBuf};
 
-use zaru_core::collections::{validate, MAX_COLLECTIONS};
-use zaru_core::Session;
+use zaru_core::collections::validate;
+use zaru_core::{Keymap, Session};
 use zaru_xmp::SidecarStyle;
 
 const STYLE: &[SidecarStyle] = &[SidecarStyle::ReplaceExtension];
+
+/// However many collection keys the default map binds.
+fn limit() -> usize {
+    Keymap::default().collections.len()
+}
+
+/// Undo and redo answer with every photo the step touched; these tests only
+/// ever make single-photo steps, so this unwraps the one.
+fn one(changes: Vec<zaru_core::PhotoChange>, what: &str) -> zaru_core::PhotoChange {
+    assert_eq!(changes.len(), 1, "{what} should have touched one photo");
+    changes.into_iter().next().unwrap()
+}
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../example_cr3.CR3")
@@ -83,15 +95,22 @@ fn a_name_that_differs_only_in_case_is_the_same_folder() {
 }
 
 #[test]
-fn there_is_one_collection_per_reachable_digit() {
+fn there_is_one_collection_per_bound_key() {
     let (mut session, _) = open("cap", &["IMG_4820.CR3"]);
-    for i in 0..MAX_COLLECTIONS {
-        session.new_collection(&format!("c{i}")).expect("within the limit");
+    for i in 0..limit() {
+        session.new_collection(&format!("c{i}"), limit()).expect("within the limit");
     }
-    // `M` picks by a single digit, so a tenth collection would have no key.
-    let over = session.new_collection("c9").unwrap_err();
-    assert!(over.contains("1 a 9"), "{over}");
-    assert_eq!(session.collections().len(), MAX_COLLECTIONS);
+    // A collection with no key is a collection the keyboard cannot reach, so
+    // the key map is what caps this and not a number chosen in the code.
+    let over = session.new_collection("demais", limit()).unwrap_err();
+    assert!(over.contains("tecla mapeada"), "{over}");
+    assert_eq!(session.collections().len(), limit());
+
+    // A smaller map is a smaller cap.
+    let mut tight = Session::default();
+    tight.open(&folder("tight", &["IMG_4820.CR3"])).unwrap();
+    tight.new_collection("uma", 1).unwrap();
+    assert!(tight.new_collection("duas", 1).is_err());
 }
 
 // --------------------------------------------------------------- assigning
@@ -99,8 +118,8 @@ fn there_is_one_collection_per_reachable_digit() {
 #[test]
 fn a_photo_belongs_to_at_most_one_collection() {
     let (mut session, _) = open("assign", &["IMG_4820.CR3", "IMG_4821.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
-    let ferrari = session.new_collection("ferrari").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
+    let ferrari = session.new_collection("ferrari", limit()).unwrap();
 
     let change = session.assign(0, Some(porsche)).unwrap();
     assert_eq!(change.collection, Some(porsche));
@@ -124,23 +143,23 @@ fn assigning_to_a_collection_that_does_not_exist_does_nothing() {
 #[test]
 fn undo_walks_back_through_collections_and_marks_alike() {
     let (mut session, _) = open("undo", &["IMG_4820.CR3", "IMG_4821.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
 
     session.set_star(0, 4);
     session.assign(0, Some(porsche));
     session.toggle_reject(1);
 
-    session.undo().expect("undo reject");
+    one(session.undo(), "undo reject");
     assert_eq!(session.view().marks[1].rating, 0);
 
-    let back = session.undo().expect("undo assign");
+    let back = one(session.undo(), "undo assign");
     assert_eq!(back.index, 0);
     assert_eq!(back.collection, None);
     assert_eq!(back.mark.rating, 4, "the star is untouched by undoing the collection");
 
-    session.undo().expect("undo star");
+    one(session.undo(), "undo star");
     assert_eq!(session.view().marks[0].rating, 0);
-    assert!(session.undo().is_none());
+    assert!(session.undo().is_empty());
 
     session.redo();
     session.redo();
@@ -156,8 +175,8 @@ fn the_plan_says_what_apply_would_do_without_doing_it() {
         "plan",
         &["IMG_4820.CR3", "IMG_4821.CR3", "IMG_4822.CR3", "IMG_4823.CR3"],
     );
-    let porsche = session.new_collection("porsche").unwrap();
-    session.new_collection("vazia").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
+    session.new_collection("vazia", limit()).unwrap();
 
     session.set_star(0, 5);
     session.assign(0, Some(porsche));
@@ -185,7 +204,7 @@ fn the_plan_says_what_apply_would_do_without_doing_it() {
 #[test]
 fn a_destination_that_is_already_taken_blocks_the_run() {
     let (mut session, dir) = open("blocked", &["IMG_4820.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.assign(0, Some(porsche));
 
     std::fs::create_dir_all(dir.join("porsche")).unwrap();
@@ -212,7 +231,7 @@ fn a_destination_that_is_already_taken_blocks_the_run() {
 #[test]
 fn a_file_standing_where_the_folder_must_go_blocks_the_run() {
     let (mut session, dir) = open("file-in-the-way", &["IMG_4820.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.assign(0, Some(porsche));
     std::fs::write(dir.join("porsche"), b"not a folder").unwrap();
 
@@ -229,7 +248,7 @@ fn a_file_standing_where_the_folder_must_go_blocks_the_run() {
 #[test]
 fn apply_writes_the_sidecar_before_the_move_so_it_travels_with_the_photo() {
     let (mut session, dir) = open("apply", &["IMG_4820.CR3", "IMG_4821.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
 
     session.set_star(0, 4);
     session.toggle_label(0, "Green");
@@ -259,7 +278,7 @@ fn everything_sharing_the_stem_travels_together() {
     std::fs::write(dir.join("IMG_4820.JPG"), b"jpeg").unwrap();
     std::fs::write(dir.join("IMG_4820.CR3.xmp"), b"<x/>").unwrap();
 
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.set_star(0, 3);
     session.assign(0, Some(porsche));
 
@@ -295,7 +314,7 @@ fn a_rejected_photo_is_marked_and_left_exactly_where_it_is() {
 #[test]
 fn after_applying_the_session_still_points_at_the_files_it_moved() {
     let (mut session, dir) = open("repoint", &["IMG_4820.CR3", "IMG_4821.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.set_star(0, 1);
     session.assign(0, Some(porsche));
     session.apply(STYLE);
@@ -308,8 +327,8 @@ fn after_applying_the_session_still_points_at_the_files_it_moved() {
 
     // The assignments have been realised, and no undo can un-move a file.
     assert_eq!(session.view().assigned, [None, None]);
-    assert!(session.undo().is_none());
-    assert!(session.redo().is_none());
+    assert!(session.undo().is_empty());
+    assert!(session.redo().is_empty());
 
     // The marks stay, because they now describe what is on disk.
     assert_eq!(session.view().marks[0].rating, 1);
@@ -318,7 +337,7 @@ fn after_applying_the_session_still_points_at_the_files_it_moved() {
 #[test]
 fn applying_twice_moves_nothing_the_second_time() {
     let (mut session, dir) = open("twice", &["IMG_4820.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.set_star(0, 5);
     session.assign(0, Some(porsche));
 
@@ -348,7 +367,7 @@ fn a_folder_with_no_marks_at_all_applies_to_nothing() {
 #[test]
 fn a_sidecar_that_does_not_exist_yet_still_counts_and_still_collides() {
     let (mut session, dir) = open("prospective", &["IMG_4820.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.set_star(0, 3);
     session.assign(0, Some(porsche));
 
@@ -378,7 +397,7 @@ fn a_sidecar_that_does_not_exist_yet_still_counts_and_still_collides() {
 #[test]
 fn the_both_compat_setting_moves_both_sidecars() {
     let (mut session, dir) = open("both-styles", &["IMG_4820.CR3"]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", limit()).unwrap();
     session.set_star(0, 4);
     session.assign(0, Some(porsche));
 

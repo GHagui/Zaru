@@ -26,7 +26,7 @@ arquivos e o acabamento visual.
 tem display, e sem isso a lógica das fases 1 e 2 ficaria sem teste nenhum.
 
 ```
-cargo test --workspace --exclude zaru      # 68 testes, sem webview
+cargo test --workspace --exclude zaru      # 77 testes, sem webview
 cargo run --bin zaru-probe -- example_cr3.CR3 -o preview.jpg
 cargo run --bin zaru-mark  -- IMG_4821.CR3 --rating 4 --label Green
 cargo build --release --target x86_64-pc-windows-gnu
@@ -203,9 +203,18 @@ estado escondido.
 
 `N` cria — modal longo, campo de texto, e enquanto está aberto **todas** as
 teclas pertencem ao campo; sem isso o usuário entra no modo sem querer e as
-próximas cinco teclas viram nome de pasta. `M` atribui — modal curto, lista
-numerada, uma tecla de `1` a `9` e fecha. Daí o limite de nove coleções: uma
-décima não teria tecla. `0` tira a foto da coleção. Uma foto pertence a no
+próximas cinco teclas viram nome de pasta.
+
+Atribuir é uma tecla só, direto, sem modal: a fileira de cima manda a foto para
+a coleção correspondente. A mesma tecla tira de novo, como acontece com as
+estrelas. `Alt` junto manda a **rajada inteira** — no automobilismo a rajada é
+o mesmo carro na mesma curva, então quase sempre pertence ao mesmo lugar, e
+decidir isso doze vezes são doze chances de escorregar. Vai como **um** passo
+de desfazer, porque foi uma decisão.
+
+`M` continua existindo, mas como consulta: abre a lista com as teclas ao lado
+dos nomes. O limite de coleções é quantas teclas estão mapeadas — uma coleção
+que o teclado não alcança não vale a pena existir. Uma foto pertence a no
 máximo uma.
 
 Nada disso toca o disco durante a triagem. Mover arquivo no meio do laço

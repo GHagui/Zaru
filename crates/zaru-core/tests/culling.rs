@@ -8,6 +8,13 @@ use std::path::{Path, PathBuf};
 use zaru_core::{Session, Settings, XmpCompat};
 use zaru_xmp::{Marks, SidecarStyle, REJECTED};
 
+/// Undo and redo answer with every photo the step touched; these tests only
+/// ever make single-photo steps, so this unwraps the one.
+fn one(changes: Vec<zaru_core::PhotoChange>, what: &str) -> zaru_core::PhotoChange {
+    assert_eq!(changes.len(), 1, "{what} should have touched one photo");
+    changes.into_iter().next().unwrap()
+}
+
 fn folder(name: &str, count: usize) -> PathBuf {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../example_cr3.CR3");
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
@@ -107,17 +114,17 @@ fn undo_walks_back_through_every_mark_and_redo_returns() {
     session.toggle_label(1, "Green");
     session.toggle_reject(2);
 
-    let back = session.undo().expect("undo reject");
+    let back = one(session.undo(), "undo reject");
     assert_eq!(back.index, 2);
     assert_eq!(rating(&session, 2), 0);
 
-    let back = session.undo().expect("undo label");
+    let back = one(session.undo(), "undo label");
     assert_eq!(back.index, 1);
     assert_eq!(label(&session, 1), None);
 
-    session.undo().expect("undo star");
+    one(session.undo(), "undo star");
     assert_eq!(rating(&session, 0), 0);
-    assert!(session.undo().is_none(), "nothing left to undo");
+    assert!(session.undo().is_empty(), "nothing left to undo");
 
     session.redo();
     assert_eq!(rating(&session, 0), 3);
@@ -125,7 +132,7 @@ fn undo_walks_back_through_every_mark_and_redo_returns() {
     assert_eq!(label(&session, 1).as_deref(), Some("Green"));
     session.redo();
     assert_eq!(rating(&session, 2), REJECTED);
-    assert!(session.redo().is_none());
+    assert!(session.redo().is_empty());
 }
 
 #[test]
@@ -135,7 +142,7 @@ fn a_new_mark_discards_the_redo_branch() {
     session.set_star(0, 3);
     session.undo();
     session.set_star(1, 1);
-    assert!(session.redo().is_none(), "the undone star must not come back");
+    assert!(session.redo().is_empty(), "the undone star must not come back");
     assert_eq!(rating(&session, 0), 0);
 }
 
@@ -144,7 +151,7 @@ fn a_mark_that_changes_nothing_does_not_fill_the_undo_stack() {
     let (mut session, _) = open("noop", 2);
 
     session.set_star(0, 0);
-    assert!(session.undo().is_none());
+    assert!(session.undo().is_empty());
 }
 
 #[test]
@@ -235,7 +242,7 @@ fn compat_settings_survive_a_round_trip_and_a_corrupt_file() {
 
     assert_eq!(Settings::load(&dir).xmp_compat, XmpCompat::Lightroom);
 
-    let chosen = Settings { xmp_compat: XmpCompat::Darktable };
+    let chosen = Settings { xmp_compat: XmpCompat::Darktable, ..Settings::default() };
     chosen.save(&dir).unwrap();
     assert_eq!(Settings::load(&dir), chosen);
 

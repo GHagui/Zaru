@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use zaru_core::{Recovery, Session};
+use zaru_core::{Keymap, Recovery, Session};
 
 const STAMP: &[u8] = b"2026:08:20 06:40:47";
 
@@ -96,7 +96,7 @@ fn every_frame_belongs_to_exactly_one_burst() {
 #[test]
 fn a_snapshot_comes_back_with_the_marks_and_the_collections() {
     let (mut session, _) = open("snapshot", &[47, 47, 49]);
-    let porsche = session.new_collection("porsche").unwrap();
+    let porsche = session.new_collection("porsche", Keymap::default().collections.len()).unwrap();
     session.set_star(0, 4);
     session.toggle_label(0, "Green");
     session.toggle_reject(2);
@@ -120,7 +120,7 @@ fn a_snapshot_comes_back_with_the_marks_and_the_collections() {
     assert_eq!(view.assigned, [None, Some(0), None]);
 
     // Undo history belongs to the session that ended, not to this one.
-    assert!(reopened.undo().is_none());
+    assert!(reopened.undo().is_empty());
 }
 
 #[test]
@@ -151,4 +151,43 @@ fn a_snapshot_survives_a_round_trip_through_the_disk() {
 
     Recovery::discard(&config, session.folder());
     assert!(Recovery::load(&config, session.folder()).is_none());
+}
+
+#[test]
+fn a_burst_goes_to_a_collection_in_one_keystroke_and_one_undo() {
+    // Three tries at one corner, then two at the next.
+    let (mut session, _) = open("burst-assign", &[47, 47, 47, 49, 49]);
+    let porsche = session
+        .new_collection("porsche", Keymap::default().collections.len())
+        .unwrap();
+
+    let changed = session.assign_burst(1, Some(porsche));
+    assert_eq!(changed.len(), 3, "the whole burst, from whichever frame");
+    assert_eq!(
+        session.view().assigned,
+        [Some(0), Some(0), Some(0), None, None],
+        "and nothing outside it"
+    );
+
+    // One keystroke was one decision, so it is one step back.
+    let undone = session.undo();
+    assert_eq!(undone.len(), 3);
+    assert_eq!(session.view().assigned, [None, None, None, None, None]);
+    assert!(session.undo().is_empty(), "the burst was a single step");
+
+    session.redo();
+    assert_eq!(session.view().assigned[0], Some(porsche));
+}
+
+#[test]
+fn assigning_a_burst_that_is_already_there_adds_no_undo_step() {
+    let (mut session, _) = open("burst-noop", &[47, 47]);
+    let porsche = session
+        .new_collection("porsche", Keymap::default().collections.len())
+        .unwrap();
+
+    session.assign_burst(0, Some(porsche));
+    session.assign_burst(0, Some(porsche));
+    session.undo();
+    assert!(session.undo().is_empty(), "the second call changed nothing");
 }

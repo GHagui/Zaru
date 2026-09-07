@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The libraries carry the whole culling model and need no webview, so they
+  # are tested on Linux where a runner is cheap and fast.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Testes
+        run: cargo test --workspace --exclude zaru
+
+      - name: Clippy
+        run: cargo clippy --workspace --exclude zaru --all-targets -- -D warnings
+
+      - name: Sintaxe do front-end
+        run: node --check ui/app.js && node --check tools/ui-preview/preview.js
+
+  # The app itself is cross-compiled rather than built on Windows: it links
+  # against WebView2, not against a system webview, so mingw is enough and the
+  # runner is the same one the tests use.
+  windows-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+
+      - name: mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+
+      - name: Compilar
+        run: cargo build --release -p zaru --target x86_64-pc-windows-gnu
+
+      - name: Empacotar
+        run: |
+          mkdir -p dist/Zaru
+          cp target/x86_64-pc-windows-gnu/release/zaru.exe dist/Zaru/
+          cp target/x86_64-pc-windows-gnu/release/WebView2Loader.dll dist/Zaru/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zaru-win64
+          # Both files, always: the loader has to sit next to the executable.
+          path: dist/Zaru/
+          if-no-files-found: error

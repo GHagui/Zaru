@@ -17,7 +17,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use zaru_core::keymap::ACTIONS;
 use zaru_core::{
-    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, ThumbSource, Thumbs, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
     SessionView, Settings,
 };
 
@@ -28,7 +28,7 @@ const LABEL: &str = "Green";
 struct AppState {
     session: Mutex<Session>,
     prefetch: Prefetch,
-    thumbnails: Prefetch,
+    thumbnails: Thumbs,
     settings: Mutex<Settings>,
     config_dir: PathBuf,
     /// Set by anything that changes a mark, cleared by a checkpoint. Saving on
@@ -41,7 +41,7 @@ impl AppState {
         AppState {
             session: Mutex::new(Session::default()),
             prefetch: Prefetch::new(),
-            thumbnails: Prefetch::new(),
+            thumbnails: Thumbs::new(Thumbs::default_dir()),
             settings: Mutex::new(Settings::load(&config_dir)),
             config_dir,
             dirty: AtomicBool::new(false),
@@ -77,7 +77,12 @@ fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, 
 fn reload_frames(state: &AppState, session: &Session) {
     state.thumbnails.load(session.photos().iter().map(|photo| {
         let preview = photo.info.thumbnail.unwrap_or(photo.info.preview);
-        Frame { path: photo.path.clone(), offset: preview.offset, len: preview.len }
+        ThumbSource {
+            key: ThumbSource::key_for(&photo.path, preview.offset, preview.len),
+            path: photo.path.clone(),
+            offset: preview.offset,
+            len: preview.len,
+        }
     }).collect());
     state.prefetch.load(
         session
@@ -105,7 +110,20 @@ fn focus(state: State<'_, AppState>, frames: Vec<usize>) {
 
 #[tauri::command]
 fn thumbnail_focus(state: State<'_, AppState>, frames: Vec<usize>) {
-    state.thumbnails.focus(&frames);
+    // Everything stays queued whatever the grid asks for; only the order
+    // changes, so scrolling past a photo does not cancel building its
+    // thumbnail — it just stops being first in line.
+    state.thumbnails.prioritise(&frames);
+}
+
+/// Files a thumbnail the front end produced.
+///
+/// Rust holds no video decoder, so for a video the WebView draws a frame and
+/// hands the bytes back here. From the next session on it is an ordinary cache
+/// hit like any photo.
+#[tauri::command]
+fn cache_thumbnail(state: State<'_, AppState>, index: usize, bytes: Vec<u8>) {
+    let _ = state.thumbnails.store(index, bytes);
 }
 
 #[tauri::command]
@@ -332,22 +350,24 @@ fn main() {
                 return;
             };
 
-            let pool = if request.uri().path().contains("/thumb/") { &state.thumbnails } else { &state.prefetch };
-            pool.fetch(
-                index,
-                Box::new(move |bytes| {
-                    responder.respond(match bytes {
-                        Some(bytes) => jpeg(bytes.as_ref().clone()),
-                        None => not_found(),
-                    });
-                }),
-            );
+            let answer = move |bytes: Option<std::sync::Arc<Vec<u8>>>| {
+                responder.respond(match bytes {
+                    Some(bytes) => jpeg(bytes.as_ref().clone()),
+                    None => not_found(),
+                })
+            };
+            if request.uri().path().contains("/thumb/") {
+                state.thumbnails.fetch(index, Box::new(answer));
+            } else {
+                state.prefetch.fetch(index, Box::new(answer));
+            }
         })
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             open_folder,
             focus,
             thumbnail_focus,
+            cache_thumbnail,
             edit_selection,
             set_star,
             toggle_reject,

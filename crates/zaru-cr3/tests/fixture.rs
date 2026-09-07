@@ -69,3 +69,12 @@ fn sof_dimensions(b: &[u8]) -> Option<(u32, u32)> {
     }
     None
 }
+
+#[test]
+fn the_shutter_time_comes_from_cmt2_with_its_fraction() {
+    let info = probe(fixture()).expect("probe");
+    // exiftool reads this frame as 2026:08:20 06:40:47.08.
+    let captured = info.captured_ms.expect("CMT2 carries DateTimeOriginal");
+    assert_eq!(captured % 1000, 80, "the sub-second field is hundredths");
+    assert_eq!(captured / 1000, 1_787_208_047);
+}

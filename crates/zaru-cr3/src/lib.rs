@@ -60,6 +60,9 @@ pub struct Cr3Info {
     pub orientation: u16,
     pub sensor_width: u32,
     pub sensor_height: u32,
+    /// When the shutter fired, in milliseconds, from `CMT2`. Only differences
+    /// between frames are meaningful — Exif records no time zone.
+    pub captured_ms: Option<i64>,
 }
 
 impl Cr3Info {
@@ -110,19 +113,24 @@ impl PreviewSource for Cr3 {
             .ok_or(Error::Malformed("no moov box"))?;
         let inside_moov = bmff::children(&mut r, moov.body, moov.end)?;
 
-        let tags = canon_tags(&mut r, &inside_moov)?;
-        let orientation = match tiff::get(&tags, tiff::TAG_ORIENTATION) {
+        let ifd0 = canon_tags(&mut r, &inside_moov, b"CMT1")?;
+        let orientation = match tiff::uint(&ifd0, tiff::TAG_ORIENTATION) {
             Some(v) if (1..=8).contains(&v) => v as u16,
             _ => 1,
         };
-        let sensor_width = tiff::get(&tags, tiff::TAG_IMAGE_WIDTH).unwrap_or(0);
-        let sensor_height = tiff::get(&tags, tiff::TAG_IMAGE_HEIGHT).unwrap_or(0);
+        let sensor_width = tiff::uint(&ifd0, tiff::TAG_IMAGE_WIDTH).unwrap_or(0);
+        let sensor_height = tiff::uint(&ifd0, tiff::TAG_IMAGE_HEIGHT).unwrap_or(0);
+
+        let exif = canon_tags(&mut r, &inside_moov, b"CMT2")?;
+        let captured_ms = tiff::text(&exif, tiff::TAG_DATE_TIME_ORIGINAL).and_then(|when| {
+            tiff::timestamp_ms(when, tiff::text(&exif, tiff::TAG_SUB_SEC_TIME_ORIGINAL))
+        });
 
         let preview = track_preview(&mut r, &inside_moov)?
             .map(Ok)
             .unwrap_or_else(|| prvw_preview(&mut r, &top))?;
 
-        Ok(Cr3Info { preview, orientation, sensor_width, sensor_height })
+        Ok(Cr3Info { preview, orientation, sensor_width, sensor_height, captured_ms })
     }
 }
 
@@ -247,19 +255,25 @@ fn prvw_preview<R: Read + Seek>(r: &mut R, top: &[BoxHeader]) -> Result<Preview>
     Ok(Preview { offset: body + 16, len, width, height, kind: PreviewKind::Prvw })
 }
 
-fn canon_tags<R: Read + Seek>(r: &mut R, moov: &[BoxHeader]) -> Result<Vec<(u16, u32)>> {
+/// Reads one of Canon's `CMT*` metadata records as a TIFF IFD. `CMT1` is IFD0,
+/// `CMT2` is the Exif IFD.
+fn canon_tags<R: Read + Seek>(
+    r: &mut R,
+    moov: &[BoxHeader],
+    which: &[u8; 4],
+) -> Result<Vec<(u16, tiff::Value)>> {
     let uuid = match moov.iter().find(|b| b.uuid == Some(UUID_CANON_META)) {
         Some(b) => b,
         None => return Ok(Vec::new()),
     };
-    let cmt1 = match bmff::children(r, uuid.body, uuid.end)?
+    let record = match bmff::children(r, uuid.body, uuid.end)?
         .into_iter()
-        .find(|b| b.is(b"CMT1"))
+        .find(|b| b.is(which))
     {
         Some(b) => b,
         None => return Ok(Vec::new()),
     };
-    let payload = read_at(r, cmt1.body, (cmt1.end - cmt1.body) as usize)?;
+    let payload = read_at(r, record.body, (record.end - record.body) as usize)?;
     tiff::ifd0(&payload)
 }
 

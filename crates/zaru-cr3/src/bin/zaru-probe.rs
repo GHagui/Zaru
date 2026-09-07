@@ -57,6 +57,10 @@ fn main() -> ExitCode {
         if mirrored { ", mirrored" } else { "" }
     );
     println!("  sensor      {}x{}", info.sensor_width, info.sensor_height);
+    match info.captured_ms {
+        Some(ms) => println!("  disparo     {}.{:03} (ms do epoch)", ms / 1000, ms % 1000),
+        None => println!("  disparo     ausente"),
+    }
 
     if let Some(out) = output {
         let bytes = match read_preview(&input, &info) {

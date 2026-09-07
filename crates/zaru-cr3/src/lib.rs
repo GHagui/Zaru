@@ -13,7 +13,6 @@
 //! * Some CR3 variants lay the tracks out differently, so the track scan is
 //!   guarded by the JPEG magic and falls back to the smaller `PRVW` box.
 
-mod bmff;
 mod error;
 mod tiff;
 
@@ -21,7 +20,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
-use bmff::{be_u16, be_u32, be_u64, read_at, BoxHeader};
+use zaru_bmff::{self as bmff, be_u16, be_u32, be_u64, read_at, BoxHeader};
 pub use error::{Error, Result};
 
 /// The `uuid` box under `moov` that holds Canon's `CMT*` metadata records.

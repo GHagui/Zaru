@@ -10,6 +10,7 @@ description = "Culling session state, preferences and preview prefetch, independ
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zaru-cr3 = { path = "../zaru-cr3", features = ["serde"] }
+zaru-video = { path = "../zaru-video" }
 # Scaling happens during the inverse DCT, so a thumbnail never materialises the
 # full image. Rayon is off: this crate runs its own pool and two of them would
 # just oversubscribe the machine.

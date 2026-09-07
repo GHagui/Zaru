@@ -1,0 +1,10 @@
+[package]
+name = "zaru-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reads duration, size, rotation and capture time from an MP4 header."
+
+[dependencies]
+zaru-bmff = { path = "../zaru-bmff" }

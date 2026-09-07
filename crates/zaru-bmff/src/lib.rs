@@ -1,11 +1,40 @@
 //! Minimal ISO base media file format reader.
 //!
-//! Only what CR3 needs: walk a box list, recurse into the containers we know,
-//! and hand back byte ranges. Nothing is buffered beyond a box header.
+//! Walks a box list, recurses into the containers we know, and hands back byte
+//! ranges. Nothing is buffered beyond a box header.
+//!
+//! A CR3 and an MP4 are the same kind of file, which is why this is its own
+//! crate: the container list below is exactly what both use, so the reader that
+//! finds a Canon preview also finds a video's duration.
 
+use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::error::{Error, Result};
+#[derive(Debug)]
+pub enum Error {
+    Io(std::io::Error),
+    /// The file is not an ISO-BMFF container, or a box header is malformed.
+    Malformed(&'static str),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "io: {e}"),
+            Error::Malformed(what) => write!(f, "container malformado: {what}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// Boxes whose payload is another box list. Everything else is opaque —
 /// recursing into a leaf like `CMT1` yields garbage, so the set stays explicit.

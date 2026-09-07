@@ -76,22 +76,28 @@ fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, 
 /// somewhere else now.
 fn reload_frames(state: &AppState, session: &Session) {
     state.thumbnails.load(session.photos().iter().map(|photo| {
-        let preview = photo.info.thumbnail.unwrap_or(photo.info.preview);
+        // A video has no embedded preview, so its source is empty: only a
+        // thumbnail the viewer drew and handed back can satisfy it.
+        let preview = photo.info.thumbnail_source();
+        let (offset, len) = preview.map(|p| (p.offset, p.len)).unwrap_or((0, 0));
         ThumbSource {
-            key: ThumbSource::key_for(&photo.path, preview.offset, preview.len),
+            key: ThumbSource::key_for(&photo.path, offset, len),
             path: photo.path.clone(),
-            offset: preview.offset,
-            len: preview.len,
+            offset,
+            len,
         }
     }).collect());
     state.prefetch.load(
         session
             .photos()
             .iter()
-            .map(|p| Frame {
-                path: p.path.clone(),
-                offset: p.info.preview.offset,
-                len: p.info.preview.len,
+            .map(|p| {
+                let preview = p.info.preview;
+                Frame {
+                    path: p.path.clone(),
+                    offset: preview.map(|v| v.offset).unwrap_or(0),
+                    len: preview.map(|v| v.len).unwrap_or(0),
+                }
             })
             .collect(),
     );
@@ -350,6 +356,21 @@ fn main() {
                 return;
             };
 
+            // A video is served from the file itself, in slices.
+            if request.uri().path().contains("/media/") {
+                let path = state.session.lock().unwrap().media_path(index);
+                let range = request
+                    .headers()
+                    .get("range")
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_string);
+                responder.respond(match path {
+                    Some(path) => ranged(&path, mime_for(&path), range.as_deref()),
+                    None => not_found(),
+                });
+                return;
+            }
+
             let answer = move |bytes: Option<std::sync::Arc<Vec<u8>>>| {
                 responder.respond(match bytes {
                     Some(bytes) => jpeg(bytes.as_ref().clone()),
@@ -398,6 +419,49 @@ fn main() {
 /// Windows. Either way the index is the last path segment.
 fn frame_index(path: &str) -> Option<usize> {
     path.rsplit('/').next()?.parse().ok()
+}
+
+/// Serves a file, honouring a `Range` request.
+///
+/// Without this a `<video>` cannot seek at all — the element needs `206` and a
+/// `Content-Range` to jump — and every request would pull the whole file into
+/// memory, which for a few minutes of 4K is gigabytes.
+fn ranged(path: &std::path::Path, mime: &str, range: Option<&str>) -> tauri::http::Response<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return not_found();
+    };
+    let Ok(total) = file.metadata().map(|m| m.len()) else {
+        return not_found();
+    };
+
+    let wanted = zaru_core::media::range_slice(total, range);
+    let (start, end) = wanted.unwrap_or((0, total.saturating_sub(1)));
+    let length = end.saturating_sub(start) + 1;
+
+    let mut body = vec![0u8; length as usize];
+    if file.seek(SeekFrom::Start(start)).is_err() || file.read_exact(&mut body).is_err() {
+        return not_found();
+    }
+
+    let partial = wanted.is_some();
+    tauri::http::Response::builder()
+        .status(if partial { 206 } else { 200 })
+        .header("Content-Type", mime)
+        .header("Accept-Ranges", "bytes")
+        .header("Content-Length", length.to_string())
+        .header("Cache-Control", "no-store")
+        .header("Content-Range", format!("bytes {start}-{end}/{total}"))
+        .body(body)
+        .unwrap_or_else(|_| not_found())
+}
+
+fn mime_for(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase) {
+        Some(ext) if ext == "mov" => "video/quicktime",
+        _ => "video/mp4",
+    }
 }
 
 fn jpeg(bytes: Vec<u8>) -> tauri::http::Response<Vec<u8>> {

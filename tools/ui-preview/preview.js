@@ -51,6 +51,8 @@ const photos = Array.from({ length: 1240 }, (_, i) => ({
   rotation: i === 3 ? 90 : 0,
   mirrored: false,
   captured: Date.UTC(2026, 7, 20, 6, 40, 47) + Math.floor(i / BURST) * 9000 + (i % BURST) * 80,
+  kind: i % 37 === 36 ? "video" : "photo",
+  durationMs: i % 37 === 36 ? 42_000 : null,
   burst: Math.floor(i / BURST),
   burstIndex: i % BURST,
   burstSize: BURST,

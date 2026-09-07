@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 mod scoped;
 pub use scoped::{BatchEdit, ApplyOperation};
-use zaru_cr3::Cr3Info;
+use crate::media::{self, Kind, MediaInfo};
 use zaru_xmp::{Marks, SidecarStyle, REJECTED};
 
 use crate::collections::validate;
@@ -29,7 +29,7 @@ const BURST_GAP_MS: i64 = 700;
 pub struct Photo {
     pub path: PathBuf,
     pub name: String,
-    pub info: Cr3Info,
+    pub info: MediaInfo,
 }
 
 /// What the front end needs to draw a frame. The byte range stays on this side.
@@ -51,6 +51,9 @@ pub struct PhotoView {
     /// per photo is cheap; the rest of the Exif is fetched only when the panel
     /// that shows it is open.
     pub captured: Option<i64>,
+    pub kind: Kind,
+    /// Milliseconds of footage, for a video.
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -159,6 +162,11 @@ impl Session {
         self.photos.get(index).map(|p| p.info.exif.clone())
     }
 
+    /// Where a file actually lives, for the handler that streams it.
+    pub fn media_path(&self, index: usize) -> Option<PathBuf> {
+        self.photos.get(index).map(|p| p.path.clone())
+    }
+
     pub fn photos(&self) -> &[Photo] {
         &self.photos
     }
@@ -175,18 +183,19 @@ impl Session {
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
-                    let (rotation, mirrored) = p.info.rotation();
                     let burst = self.bursts[i];
                     PhotoView {
                         name: p.name.clone(),
-                        width: p.info.preview.width,
-                        height: p.info.preview.height,
-                        rotation,
-                        mirrored,
+                        width: p.info.width,
+                        height: p.info.height,
+                        rotation: p.info.rotation,
+                        mirrored: p.info.mirrored,
                         burst,
                         burst_index: i - self.burst_starts[burst],
                         burst_size: self.burst_sizes[burst],
                         captured: p.info.captured_ms,
+                        kind: p.info.kind,
+                        duration_ms: p.info.duration_ms,
                     }
                 })
                 .collect(),
@@ -203,22 +212,18 @@ impl Session {
             .map_err(|e| format!("{}: {e}", folder.display()))?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| {
-                p.extension()
-                    .map(|e| e.eq_ignore_ascii_case("cr3"))
-                    .unwrap_or(false)
-            })
+            .filter(|p| media::is_supported(p))
             .collect();
         paths.sort();
 
         if paths.is_empty() {
-            return Err(format!("nenhum arquivo CR3 em {}", folder.display()));
+            return Err(format!("nenhuma foto ou vídeo em {}", folder.display()));
         }
 
         let photos = probe_all(&paths);
         if photos.is_empty() {
             return Err(format!(
-                "{} arquivos CR3 em {}, nenhum com prévia legível",
+                "{} arquivos em {}, nenhum legível",
                 paths.len(),
                 folder.display()
             ));
@@ -601,13 +606,21 @@ fn group_bursts(photos: &[Photo]) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
     let mut starts: Vec<usize> = Vec::new();
     let mut sizes: Vec<usize> = Vec::new();
     let mut previous: Option<i64> = None;
+    let mut previous_was_video = false;
 
     for (index, photo) in photos.iter().enumerate() {
         let now = photo.info.captured_ms;
-        let same = match (previous, now) {
-            (Some(before), Some(now)) => now >= before && now - before <= BURST_GAP_MS,
-            _ => false,
-        };
+        let video = photo.info.is_video();
+        // A burst is a run of tries at one subject, and a clip is not one of
+        // them. A video that happens to start right after a burst would be
+        // folded into it by time alone, and then judged as if it were another
+        // frame of the same thing.
+        let same = !video
+            && !previous_was_video
+            && match (previous, now) {
+                (Some(before), Some(now)) => now >= before && now - before <= BURST_GAP_MS,
+                _ => false,
+            };
         if same {
             let id = sizes.len() - 1;
             ids.push(id);
@@ -618,6 +631,7 @@ fn group_bursts(photos: &[Photo]) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
             sizes.push(1);
         }
         previous = now;
+        previous_was_video = video;
     }
     (ids, starts, sizes)
 }
@@ -641,7 +655,7 @@ fn probe_all(paths: &[PathBuf]) -> Vec<Photo> {
         for (paths, slots) in paths.chunks(chunk).zip(slots.chunks_mut(chunk)) {
             scope.spawn(move || {
                 for (path, slot) in paths.iter().zip(slots) {
-                    let Ok(info) = zaru_cr3::probe(path) else {
+                    let Ok(info) = MediaInfo::probe(path) else {
                         continue;
                     };
                     *slot = Some(Photo {

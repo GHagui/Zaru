@@ -7,6 +7,7 @@
 
 pub mod collections;
 pub mod keymap;
+pub mod media;
 pub mod prefetch;
 pub mod recovery;
 pub mod session;
@@ -14,6 +15,7 @@ pub mod thumbs;
 pub mod settings;
 
 pub use keymap::Keymap;
+pub use media::{Kind, MediaInfo};
 pub use zaru_cr3::Exif;
 pub use prefetch::{Frame, Prefetch};
 pub use recovery::{Recovery, RecoveryOffer};

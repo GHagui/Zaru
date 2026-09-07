@@ -71,6 +71,13 @@ body.idle #stage, body.no-results #stage { cursor: default; }
 #ring { position: absolute; inset: 0; }
 #ring .frame { position: absolute; top: 0; bottom: 0; overflow: hidden; visibility: hidden; }
 #ring .frame.shown { visibility: visible; }
+
+/* A video is one element, not a ring: nobody buffers nine clips ahead. It sits
+   in the same box the stills use, so the frame does not jump when the pass
+   passes through one. */
+#player-box { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
+#player-box[hidden] { display: none; }
+#player { max-width: 100%; max-height: 100%; background: #000; }
 #ring img { position: absolute; top: 50%; left: 50%; object-fit: contain; }
 /* Frame swaps and image geometry deliberately have no animations. */
 #divider { position: absolute; inset: 0 auto 0 50%; width: 3px; margin-left: -1.5px; background: #111; z-index: 1; }
@@ -221,6 +228,9 @@ body.grid-mode #ring, body.grid-mode #divider, body.grid-mode .pane-tag { displa
 .grid-marks { color: var(--star); min-height: 17px; }
 /* The clock, in the camera's own wall time, under every tile. */
 .grid-when { color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A clip announces its length; a still has nothing here and the row collapses. */
+.grid-duration:not(:empty) { color: var(--ink); font-variant-numeric: tabular-nums; }
+.grid-duration:not(:empty)::before { content: "▶ "; color: var(--muted); }
 .grid-collection { color: var(--chip, var(--muted)); min-height: 17px; }
 .pending-dot { float: right; color: #edcd79; }
 .thumbnail-error { color: var(--muted); font-size: 11px; padding: 10px; text-align: center; }

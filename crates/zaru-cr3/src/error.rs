@@ -21,6 +21,15 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+impl From<zaru_bmff::Error> for Error {
+    fn from(e: zaru_bmff::Error) -> Self {
+        match e {
+            zaru_bmff::Error::Io(e) => Error::Io(e),
+            zaru_bmff::Error::Malformed(what) => Error::Malformed(what),
+        }
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::Io(e)

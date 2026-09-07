@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/zaru-core", "crates/zaru-cr3", "crates/zaru-xmp", "src-tauri"]
+members = ["crates/zaru-bmff", "crates/zaru-core", "crates/zaru-cr3", "crates/zaru-video", "crates/zaru-xmp", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

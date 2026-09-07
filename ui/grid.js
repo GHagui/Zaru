@@ -50,6 +50,8 @@
     // one burst from the next at a glance.
     const when = card.querySelector(".grid-when");
     if (when) when.textContent = window.zaruTime?.gridTimestamp(state.photos[index].captured) ?? "";
+    const length = card.querySelector(".grid-duration");
+    if (length) length.textContent = window.zaruTime?.duration(state.photos[index].durationMs) ?? "";
     const collection = state.assigned[index];
     const chip = card.querySelector(".grid-collection");
     chip.textContent = collection == null ? "Sem coleção" : state.collections[collection];
@@ -93,7 +95,7 @@
         if (!card) {
           card = document.createElement("div"); card.className = "grid-card"; card.dataset.index = index; card.setAttribute("role", "gridcell");
           card.setAttribute("aria-label", state.photos[index].name);
-          card.innerHTML = '<span class="selection-tick" aria-hidden="true"></span><div class="grid-image"></div><div class="grid-caption"><span class="grid-name"></span><span class="grid-marks"></span><span class="grid-when"></span><span class="grid-collection"></span></div>';
+          card.innerHTML = '<span class="selection-tick" aria-hidden="true"></span><div class="grid-image"></div><div class="grid-caption"><span class="grid-name"></span><span class="grid-marks"></span><span class="grid-when"></span><span class="grid-duration"></span><span class="grid-collection"></span></div>';
           const name = card.querySelector(".grid-name");
           const dot = document.createElement("span"); dot.className = "pending-dot"; dot.title = "Alterações pendentes";
           name.textContent = state.photos[index].name; name.append(dot);
@@ -120,6 +122,12 @@
     try {
       image.src = `${convertFileSrc(`thumb/${task.index}`, "zaru")}?v=${task.generation}`;
       try { await image.decode(); } catch {
+        // A clip carries no still, so nothing on disk can answer the first
+        // time. The WebView holds the only video decoder in the app, so it
+        // draws a frame and hands the bytes back to be cached.
+        if (state.photos[task.index]?.kind === "video") {
+          return void await videoThumbnail(task);
+        }
         image.src = frameUrl(task.index); await image.decode();
       }
       if (task.generation !== generation || cards.get(task.index) !== task.card) return;
@@ -139,6 +147,36 @@
         task.card.querySelector(".grid-image").replaceChildren(error);
       }
     } finally { image.removeAttribute("src"); }
+  }
+
+  /// Pulls one frame out of a clip and files it in the same cache the photos use.
+  async function videoThumbnail(task) {
+    const video = document.createElement("video");
+    video.muted = true; video.preload = "metadata"; video.playsInline = true;
+    video.src = convertFileSrc(`media/${task.index}`, "zaru");
+
+    await new Promise((resolve, reject) => {
+      video.onerror = () => reject(new Error("o WebView não decodificou este vídeo"));
+      video.onloadedmetadata = () => {
+        // Half a second in: the very first frame of a clip is often a fade.
+        video.currentTime = Math.min(0.5, (video.duration || 1) / 2);
+      };
+      video.onseeked = resolve;
+      setTimeout(() => reject(new Error("tempo esgotado")), 15000);
+    });
+    if (task.generation !== generation || cards.get(task.index) !== task.card) return;
+
+    const factor = Math.min(1, 384 / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(video.videoWidth * factor);
+    canvas.height = Math.round(video.videoHeight * factor);
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    task.card.querySelector(".grid-image").replaceChildren(canvas);
+
+    const blob = await new Promise(done => canvas.toBlob(done, "image/jpeg", 0.82));
+    if (!blob) return;
+    const bytes = [...new Uint8Array(await blob.arrayBuffer())];
+    await invoke("cache_thumbnail", { index: task.index, bytes }).catch(reportError);
   }
 
   function pump() {

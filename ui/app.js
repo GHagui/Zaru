@@ -135,6 +135,12 @@ for (let i = 0; i < RING; i++) {
   state.slots.push({ el: img, box, index: null });
 }
 
+function mediaUrl(index) {
+  return convertFileSrc(`media/${index}`, "zaru");
+}
+
+const isVideo = (index) => state.photos[index]?.kind === "video";
+
 function frameUrl(index) {
   return convertFileSrc(String(index), "zaru");
 }
@@ -257,6 +263,34 @@ function show() {
     renderStatus();
     return;
   }
+  // A clip has no still to hand over, so the ring stands down and the player
+  // takes the pane.
+  const video = isVideo(current());
+  const playerBox = el("player-box");
+  const player = el("player");
+  playerBox.hidden = !video;
+  if (video) {
+    const wanted = mediaUrl(current());
+    if (player.dataset.src !== wanted) {
+      player.dataset.src = wanted;
+      player.src = wanted;
+    }
+    const box = pane("current");
+    playerBox.style.left = `${box.cx - box.w / 2}px`;
+    playerBox.style.width = `${box.w}px`;
+    for (const s of [...state.slots, reference]) s.box.classList.remove("shown");
+    renderStatus();
+    return;
+  }
+  if (player.dataset.src) {
+    // Leaving a clip stops it; a video still playing behind a photo would be
+    // sound with no picture.
+    player.pause();
+    player.removeAttribute("src");
+    delete player.dataset.src;
+    player.load();
+  }
+
   const slot = assignSlot(current());
   const pinnedSlot = state.pinned === null ? null : reference;
   if (pinnedSlot && pinnedSlot.index !== state.pinned) {
@@ -335,6 +369,13 @@ function renderStatus() {
   el("current-tag").textContent = comparing ? `Atual · ${photo.name}` : "";
   document.querySelectorAll('[data-command="compare"]').forEach(b => b.setAttribute("aria-pressed", String(comparing)));
   document.querySelectorAll("[data-photo]").forEach(b => b.disabled = !hasPhoto || state.busy);
+  // Zoom and side-by-side belong to stills. The guard already refuses the
+  // action; the button has to say so too, or it looks clickable and does
+  // nothing, which is worse than being plainly off.
+  const still = hasPhoto && !isVideo(index);
+  document.querySelectorAll('[data-command="zoom"], [data-command="compare"]')
+    .forEach(b => b.disabled = !still || state.busy);
+
   document.querySelectorAll("[data-session]").forEach(b => b.disabled = !state.photos.length || state.busy);
   document.querySelectorAll('[data-command="prev"]').forEach(b => b.disabled = !hasPhoto || state.at === 0 || state.busy);
   document.querySelectorAll('[data-command="next"]').forEach(b => b.disabled = !hasPhoto || state.at === state.visible.length - 1 || state.busy);
@@ -364,7 +405,16 @@ function fullTimestamp(ms) {
   return d.toLocaleString("pt-BR", { ...UTC, dateStyle: "short", timeStyle: "medium" });
 }
 
-window.zaruTime = { gridTimestamp, fullTimestamp };
+/// A clip's length, the way a player shows it.
+function duration(ms) {
+  if (ms == null) return "";
+  const total = Math.round(ms / 1000);
+  const [h, m, sec] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+window.zaruTime = { gridTimestamp, fullTimestamp, duration };
 
 function goto(position, pressedAt) {
   if (!state.visible.length || state.busy) return;
@@ -443,7 +493,14 @@ function fillRing() {
 /// Zoom is kept across frames on purpose. Zooming to where the autofocus point
 /// was and then walking a burst at 100% is the whole reason it exists — losing
 /// it on every keypress would make it useless for exactly that.
+/// Zoom and side-by-side belong to stills.
+///
+/// A clip has no fixed frame to magnify and no still to compare against, and a
+/// control that pretends otherwise is worse than one that says no.
+const stillOnly = () => state.photos.length && !isVideo(current());
+
 function setScale(next, originX, originY) {
+  if (!stillOnly()) return;
   const photo = state.photos[current()];
   if (!photo) return;
   const native = geometry(photo, pane("current")).native;
@@ -469,6 +526,7 @@ function resetView() {
 }
 
 function toggleNative() {
+  if (!stillOnly()) return;
   const photo = state.photos[current()];
   if (!photo) return;
   const native = geometry(photo, pane("current")).native;
@@ -482,6 +540,7 @@ function toggleNative() {
 /// pan, which is what makes the comparison mean anything: the same corner of
 /// two frames, at the same magnification.
 function togglePin() {
+  if (!stillOnly()) return;
   state.pinned = state.pinned === null ? current() : null;
   document.body.classList.toggle("compare", state.pinned !== null);
   dom.divider.hidden = state.pinned === null;
@@ -1284,6 +1343,7 @@ dom.stage.addEventListener(
 let drag = null;
 dom.stage.addEventListener("pointerdown", (e) => {
   if (state.modal || state.busy || window.gridUI?.active || !state.visible.length || e.button !== 0 || e.target.closest("button, .card")) return;
+  if (!stillOnly()) return;
   drag = { x: e.clientX, y: e.clientY, moved: false };
   dom.stage.setPointerCapture(e.pointerId);
   document.body.classList.add("dragging");

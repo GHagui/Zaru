@@ -16,7 +16,9 @@ arquivos e o acabamento visual.
 
 | Crate | O quê |
 |---|---|
-| `zaru-cr3` | Acha o JPEG embutido e a orientação. Zero dependências. |
+| `zaru-bmff` | Percorre caixas ISO-BMFF. CR3 e MP4 são o mesmo tipo de arquivo. |
+| `zaru-cr3` | Acha o JPEG embutido, a orientação e o EXIF. |
+| `zaru-video` | Duração, tamanho, rotação e hora de um MP4, só do cabeçalho. |
 | `zaru-xmp` | Lê, mescla e escreve `xmp:Rating` / `xmp:Label`. Zero dependências. |
 | `zaru-core` | Sessão, marcas, desfazer, preferências, prefetch. Sem Tauri. |
 | `src-tauri` | Janela, protocolo `zaru://` e os comandos. Só fiação. |
@@ -26,7 +28,7 @@ arquivos e o acabamento visual.
 tem display, e sem isso a lógica das fases 1 e 2 ficaria sem teste nenhum.
 
 ```
-cargo test --workspace --exclude zaru      # 77 testes, sem webview
+cargo test --workspace --exclude zaru      # 113 testes, sem webview
 cargo run --bin zaru-probe -- example_cr3.CR3 -o preview.jpg
 cargo run --bin zaru-mark  -- IMG_4821.CR3 --rating 4 --label Green
 cargo build --release --target x86_64-pc-windows-gnu
@@ -186,6 +188,31 @@ apagado no Aplicar. Isso **não** é um catálogo: a pasta continua sendo a úni
 verdade, o arquivo não guarda nada que não esteja prestes a virar sidecar, e
 ele é validado contra a lista de fotos antes de ser oferecido — uma foto a mais
 ou a menos e os índices não querem dizer nada.
+
+## Vídeo
+
+A R50 grava MP4 na mesma pasta, e um MP4 é o mesmo tipo de contêiner que um
+CR3 — o mesmo percorredor de caixas acha os dois. Duração, tamanho, rotação e a
+hora em que a gravação começou saem todas do `moov`, então o Zaru aprende tudo
+que precisa sobre um arquivo de dois gigabytes lendo algumas centenas de bytes
+dele.
+
+Vídeo é cidadão pleno: aparece na passada, recebe nota, verde e rejeição, entra
+em coleção e ganha `.xmp` pela mesma regra de *stem* das fotos.
+
+Duas coisas mudam, e nenhuma é disfarçada. **Zoom e comparação ficam
+desligados** — um clipe não tem quadro fixo para ampliar nem still para
+confrontar, e um controle que finge o contrário é pior que um desligado. E um
+clipe **nunca entra numa rajada de fotos**: proximidade de relógio o juntaria a
+quadros que não se comparam com ele.
+
+A miniatura vem do WebView, porque ele tem decodificador de vídeo e o Rust não:
+um `<video>` busca meio segundo, a JS captura o quadro e devolve os bytes, que
+entram no mesmo cache das fotos. Da segunda vez em diante é acerto de disco.
+
+Para tocar, o protocolo passou a responder `Range`. Sem `206` o `<video>` não
+busca, e cada pedido puxaria o arquivo inteiro para a memória — o que para
+alguns minutos de 4K são gigabytes.
 
 ## Coleções
 

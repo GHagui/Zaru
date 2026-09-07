@@ -1,0 +1,9 @@
+[package]
+name = "zaru-bmff"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Minimal ISO base media file format reader, shared by the CR3 and MP4 readers."
+
+[dependencies]

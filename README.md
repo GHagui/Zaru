@@ -28,7 +28,7 @@ arquivos e o acabamento visual.
 tem display, e sem isso a lógica das fases 1 e 2 ficaria sem teste nenhum.
 
 ```
-cargo test --workspace --exclude zaru      # 113 testes, sem webview
+cargo test --workspace --exclude zaru      # 123 testes, sem webview
 cargo run --bin zaru-probe -- example_cr3.CR3 -o preview.jpg
 cargo run --bin zaru-mark  -- IMG_4821.CR3 --rating 4 --label Green
 cargo build --release --target x86_64-pc-windows-gnu
@@ -340,6 +340,45 @@ Também não revela RAW, não edita, não mantém catálogo e não importa cart�
 `.exe` do Windows por cross-compile no mesmo runner** — o app linka contra o
 WebView2, não contra um webview do sistema, então mingw basta. O artefato
 `Zaru-win64` sai pronto de cada push.
+
+## Enviar para outro programa
+
+Depois de uma passada, os aprovados quase sempre vão para outro lugar — DxO
+PureRAW, Topaz, Photoshop. `X` entrega o lote ao programa escolhido nos Ajustes,
+com o mesmo escopo do Aplicar: a seleção da grade, ou a passada inteira.
+
+O mecanismo é o que o próprio Windows usa no "Abrir com": iniciar o programa
+com os caminhos como argumento. A DxO não publica linha de comando para o
+PureRAW, mas o executável está registrado contra `.CR3` e aceita vários
+arquivos de uma vez — isso foi verificado antes de o código existir, não
+suposto.
+
+Nada aqui é específico de um fabricante. Hard-codear a DxO não teria dado menos
+trabalho, só mais fragilidade no dia em que você trocar de ferramenta.
+
+Três coisas que o código trata e não são óbvias:
+
+**A linha de comando do Windows tem teto** de 32767 caracteres. Cem aprovados
+cabem numa chamada; mil e oitocentos caminhos passam de cem mil caracteres e o
+processo simplesmente não inicia, sem mensagem. O lote é dividido em execuções e
+o aviso diz em quantas foi.
+
+**Vídeo fica de fora**, porque essas ferramentas revelam RAW e um clipe só
+produziria um erro que alguém teria que ler. Quantos ficaram é dito, não
+omitido.
+
+**Movimentações pendentes são avisadas.** Enviar fotos que ainda vão mudar de
+pasta deixaria as cópias reveladas ao lado de um endereço velho.
+
+A detecção de programas instalados é conveniência, não mecanismo: o caminho é um
+ajuste que você pode apontar à mão, e um programa que ninguém adivinhou funciona
+igual. Ela roda ao abrir os Ajustes e não na partida, porque varrer o
+`Program Files` custa segundos.
+
+Uma armadilha que essa detecção aprendeu na marra: a DxO instala
+`PureRAWv6_saver.exe` ao lado de `PureRAWv6.exe`. A primeira busca escrita para
+isto pegou o *saver*, que inicia e sai sem janela — e um teste assim parece o
+programa recusando os argumentos quando na verdade era o binário errado.
 
 ## Idiomas
 

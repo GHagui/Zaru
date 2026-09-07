@@ -46,6 +46,9 @@ pub struct Settings {
     /// A language the user pinned. `None` means follow the system, which is
     /// what almost everybody wants and nobody should have to configure.
     pub language: Option<String>,
+    /// The program a batch is handed to after a pass. `None` until the user
+    /// picks one; detection only offers candidates, it never chooses.
+    pub send_to: Option<String>,
     pub keymap: Keymap,
 }
 

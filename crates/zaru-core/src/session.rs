@@ -163,6 +163,38 @@ impl Session {
         self.photos.get(index).map(|p| p.info.exif.clone())
     }
 
+    /// The photos to hand to another program, in pass order.
+    ///
+    /// Video is left out: the tools this feeds are RAW developers, and sending
+    /// them a clip would only produce an error somebody else has to read. What
+    /// is skipped is counted so the app can say so rather than quietly send
+    /// fewer files than the user selected.
+    pub fn files_to_send(&self, indices: Option<&[usize]>) -> (Vec<PathBuf>, usize) {
+        let chosen: Vec<usize> = match indices {
+            Some(list) => list.iter().copied().filter(|i| *i < self.photos.len()).collect(),
+            None => (0..self.photos.len()).collect(),
+        };
+        let mut files = Vec::new();
+        let mut skipped = 0;
+        for index in chosen {
+            let photo = &self.photos[index];
+            if photo.info.is_video() {
+                skipped += 1;
+            } else {
+                files.push(photo.path.clone());
+            }
+        }
+        (files, skipped)
+    }
+
+    /// Whether anything is still waiting for Apply.
+    ///
+    /// Sending files that are about to move would put the developed copies
+    /// beside the originals' old home, so it is worth saying before it happens.
+    pub fn has_pending_moves(&self) -> bool {
+        self.assigned.iter().any(Option::is_some)
+    }
+
     /// Where a file actually lives, for the handler that streams it.
     pub fn media_path(&self, index: usize) -> Option<PathBuf> {
         self.photos.get(index).map(|p| p.path.clone())

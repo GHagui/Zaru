@@ -17,7 +17,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use zaru_core::keymap::ACTIONS;
 use zaru_core::{
-    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, Message, ThumbSource, Thumbs, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, Message, Program, ThumbSource,
+    Thumbs, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
     SessionView, Settings,
 };
 
@@ -231,6 +232,89 @@ fn assign_burst(
 #[tauri::command]
 fn exif(state: State<'_, AppState>, index: usize) -> Option<Exif> {
     state.session.lock().unwrap().exif(index)
+}
+
+/// Lets the user point at a program detection did not find.
+#[tauri::command]
+async fn pick_program(app: tauri::AppHandle) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .add_filter("Programa", &["exe", "app", ""])
+        .pick_file(move |file| {
+            let _ = tx.send(file);
+        });
+    rx.recv().ok().flatten().map(|f| f.to_string())
+}
+
+/// Programs already installed that could take a batch, for the settings screen.
+#[tauri::command]
+fn detect_programs() -> Vec<Program> {
+    zaru_core::external::detect()
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SendReport {
+    sent: usize,
+    /// Videos left out: the tools this feeds develop RAW.
+    skipped: usize,
+    /// How many times the program had to be started. Windows caps a command
+    /// line, so a whole shoot does not fit in one.
+    runs: usize,
+    pending: bool,
+    program: String,
+}
+
+/// Hands a batch to the program the user chose.
+///
+/// The mechanism is the one Windows uses for "Open with": start it with the
+/// paths as arguments. Nothing here knows which program it is.
+#[tauri::command]
+fn send_to(
+    state: State<'_, AppState>,
+    indices: Option<Vec<usize>>,
+) -> Result<SendReport, Message> {
+    let program = state
+        .settings
+        .lock()
+        .unwrap()
+        .send_to
+        .clone()
+        .ok_or_else(|| Message::new("sendTo.notChosen"))?;
+    let program = PathBuf::from(program);
+    if !program.is_file() {
+        return Err(Message::new("sendTo.missing").with("path", program.display()));
+    }
+
+    let (files, skipped, pending) = {
+        let session = state.session.lock().unwrap();
+        let (files, skipped) = session.files_to_send(indices.as_deref());
+        (files, skipped, session.has_pending_moves())
+    };
+    if files.is_empty() {
+        return Err(Message::new("sendTo.nothing"));
+    }
+
+    let runs = zaru_core::external::batches(&program, &files);
+    for run in &runs {
+        std::process::Command::new(&program)
+            .args(run)
+            .spawn()
+            .map_err(|e| {
+                Message::new("sendTo.failed")
+                    .with("program", program.display())
+                    .with("reason", e)
+            })?;
+    }
+
+    Ok(SendReport {
+        sent: files.len(),
+        skipped,
+        runs: runs.len(),
+        pending,
+        program: zaru_core::external::Program::at(&program).name,
+    })
 }
 
 /// Every language the app can show, and the strings for any the user supplied.
@@ -485,6 +569,9 @@ fn main() {
             exif,
             key_actions,
             languages,
+            detect_programs,
+            pick_program,
+            send_to,
             set_language,
             bind_key,
             reset_keymap,

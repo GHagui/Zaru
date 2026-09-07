@@ -278,6 +278,8 @@
   }
 
   window.gridUI = { get active() { return active; }, actions, toggle, render, renderStatus: status, edit, action, keydown, invalidate, filterChanged,
+    /// What is selected, in pass order, for anything acting on a batch.
+    selection() { return [...selected].sort((a, b) => a - b); },
     reset() { selected.clear(); anchor = focused = null; scroll.scrollTop = 0; invalidate(); },
   };
   scroll.addEventListener("scroll", schedule);

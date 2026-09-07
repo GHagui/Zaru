@@ -6,6 +6,7 @@
 //! matters, because the machine this is developed on has no display.
 
 pub mod collections;
+pub mod external;
 pub mod i18n;
 pub mod keymap;
 pub mod media;
@@ -15,6 +16,7 @@ pub mod session;
 pub mod thumbs;
 pub mod settings;
 
+pub use external::Program;
 pub use i18n::Message;
 pub use keymap::Keymap;
 pub use media::{Kind, MediaInfo};

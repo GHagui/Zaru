@@ -1170,6 +1170,64 @@ async function captureKey(key) {
   }
 }
 
+/// Hands the batch to the program chosen in Ajustes.
+///
+/// Scope follows Apply: the grid's selection, or the whole pass. What comes
+/// back is reported rather than assumed — videos are left out, and a shoot too
+/// long for one command line goes in several runs.
+async function sendTo() {
+  const indices = window.gridUI?.active ? window.gridUI.selection() : null;
+  try {
+    const report = await invoke("send_to", { indices });
+    const parts = [t("sendTo.done", { program: report.program, count: report.sent })];
+    if (report.skipped) parts.push(tc("sendTo.skipped", report.skipped));
+    if (report.runs > 1) parts.push(t("sendTo.runs", { runs: report.runs }));
+    // Files about to move would leave the developed copies beside an old home.
+    if (report.pending) parts.push(t("sendTo.pending"));
+    notifyUser(parts.join(" · "));
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+/// Fills the program menu, offering whatever is already installed.
+///
+/// Called when the settings screen opens rather than at start-up: the search
+/// walks Program Files, which costs seconds on a real machine, and it is a
+/// convenience for one screen — not something to make everybody wait for.
+let programsLoaded = false;
+async function loadPrograms() {
+  const menu = el("send-to");
+  if (!menu) return;
+  const [settings, found] = await Promise.all([
+    invoke("get_settings").catch(() => null),
+    invoke("detect_programs").catch(() => []),
+  ]);
+  const chosen = settings?.sendTo ?? "";
+
+  menu.replaceChildren();
+  const none = new Option(t("settings.sendToNone"), "");
+  none.selected = !chosen;
+  menu.append(none);
+  const paths = new Set(found.map((p) => p.path));
+  if (chosen && !paths.has(chosen)) found.push({ path: chosen, name: chosen });
+  for (const program of found) {
+    const option = new Option(program.name, program.path);
+    option.selected = program.path === chosen;
+    menu.append(option);
+  }
+  const remember = (value) =>
+    invoke("set_settings", { settings: { ...settings, sendTo: value || null } }).catch(reportError);
+  menu.onchange = () => remember(menu.value);
+
+  el("send-to-browse").onclick = async () => {
+    const picked = await invoke("pick_program").catch(() => null);
+    if (!picked) return;
+    await remember(picked);
+    await loadPrograms();
+  };
+}
+
 /// Fills the language menu and applies whichever language wins.
 ///
 /// The system's choice is the default because nobody should have to configure
@@ -1290,6 +1348,7 @@ function renderHelp() {
   row(`Alt+${showKey(k.collections[0] ?? "")}`, t("help.burstAssign"));
   row(showKey(k.newCollection), t("help.newCollection"));
   row(showKey(k.moveTo), t("help.moveTo"));
+  row(showKey(k.sendTo), t("help.sendTo"));
   row(showKey(k.zoom), t("help.zoom"));
   row(showKey(k.compare), t("help.compare"));
   row(showKey(k.filter), t("help.filter"));
@@ -1309,10 +1368,14 @@ async function executeAction(action, whole = false) {
     case "grid": return window.gridUI?.toggle();
     case "photo": return window.gridUI?.toggle(false);
     case "open": return pickFolder();
-    case "settings": return openModal("settings");
+    case "settings":
+      openModal("settings");
+      if (!programsLoaded) { programsLoaded = true; loadPrograms().catch(reportError); }
+      return;
     case "help": return openModal("help");
     case "clearFilter": return setFilter(0);
     case "collections": return toggleCollections();
+    case "sendTo": return sendTo();
     case "exif": return toggleExif();
   }
   if (!state.photos.length) return;

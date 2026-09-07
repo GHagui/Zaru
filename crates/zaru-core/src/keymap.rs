@@ -22,7 +22,7 @@ use crate::i18n::Message;
 /// same way they reach every other label.
 pub const ACTIONS: &[&str] = &[
     "grid", "prev", "next", "star1", "star2", "star3", "star4", "star5", "label", "reject",
-    "zoom", "compare", "filter", "exif", "newCollection", "moveTo", "open", "settings", "help",
+    "zoom", "compare", "filter", "exif", "newCollection", "moveTo", "sendTo", "open", "settings", "help",
 ];
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -43,6 +43,7 @@ pub struct Keymap {
     pub compare: String,
     pub filter: String,
     pub exif: String,
+    pub send_to: String,
     pub new_collection: String,
     pub move_to: String,
     pub open: String,
@@ -78,6 +79,7 @@ impl Default for Keymap {
             // `f` belongs to the collections row, so filtering moved one key over.
             filter: "d".into(),
             exif: "i".into(),
+            send_to: "x".into(),
             new_collection: "n".into(),
             move_to: "m".into(),
             open: "o".into(),
@@ -121,6 +123,7 @@ impl Keymap {
             "compare" => &self.compare,
             "filter" => &self.filter,
             "exif" => &self.exif,
+            "sendTo" => &self.send_to,
             "newCollection" => &self.new_collection,
             "moveTo" => &self.move_to,
             "open" => &self.open,
@@ -171,6 +174,7 @@ impl Keymap {
             "compare" => self.compare = key,
             "filter" => self.filter = key,
             "exif" => self.exif = key,
+            "sendTo" => self.send_to = key,
             "newCollection" => self.new_collection = key,
             "moveTo" => self.move_to = key,
             "open" => self.open = key,
@@ -257,10 +261,10 @@ mod tests {
     #[test]
     fn a_key_can_be_moved_once_the_old_binding_is_out_of_the_way() {
         let mut map = Keymap::default();
-        map.set("filter", "x").unwrap();
+        map.set("filter", ",").unwrap();
         map.set("zoom", "d").unwrap();
         assert_eq!(map.get("zoom").as_deref(), Some("d"));
-        assert_eq!(map.get("filter").as_deref(), Some("x"));
+        assert_eq!(map.get("filter").as_deref(), Some(","));
     }
 
     #[test]

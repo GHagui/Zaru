@@ -66,7 +66,7 @@ const defaultKeymap = {
   prev: "k", next: "h",
   star1: "a", star2: "r", star3: "s", star4: "t", star5: "g",
   label: " ", reject: "Backspace",
-  zoom: "z", compare: "v", filter: "d", exif: "i",
+  zoom: "z", compare: "v", filter: "d", exif: "i", sendTo: "x",
   newCollection: "n", moveTo: "m", open: "o", settings: "c", help: "?",
   collections: ["q","w","f","p","b","j","l","u","y",";"],
 };
@@ -153,6 +153,12 @@ const commands = {
     extra: {}, folder: "/tmp/zaru/locales", system: "pt-BR", chosen: null,
   }),
   set_language: () => {},
+  detect_programs: () => ([{ path: "C:\\Program Files\\DxO\\DxO PureRAW 6\\PureRAWv6.exe", name: "PureRAWv6" }]),
+  pick_program: () => null,
+  send_to: ({ indices }) => ({
+    sent: indices ? indices.length : photos.length, skipped: 0, runs: 1,
+    pending: false, program: "PureRAWv6",
+  }),
   bind_key: ({ action, key }) => {
     const flat = [
       ...ACTION_LABELS.map(([id]) => [id, settings.keymap[id]]),

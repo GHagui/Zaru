@@ -102,11 +102,13 @@ exports.verify = async function verify({ browser, stub, site, root, out }) {
   await page.keyboard.press("Shift+Tab");
   check(await page.evaluate(() => document.querySelector("#settings").contains(document.activeElement)), "Dialog traps reverse Tab");
   await page.locator('.keyrow[data-action="zoom"]').click();
-  await page.keyboard.press("x");
-  check((await page.locator("#zoom").getAttribute("title")).endsWith("· x"), "Shortcut hints follow remapping");
+  // A key nothing else owns: `x` now belongs to "send to", and the conflict
+  // check would refuse the rebind — correctly, but that is a different test.
+  await page.keyboard.press(",");
+  check((await page.locator("#zoom").getAttribute("title")).endsWith("· ,"), "Shortcut hints follow remapping");
   await page.keyboard.press("Escape");
   check(await page.evaluate(() => document.activeElement.id === "config"), "Dialog restores the invoking control's focus");
-  await page.keyboard.press("x");
+  await page.keyboard.press(",");
   check((await page.locator("#zoom").innerText()).startsWith("100%"), "Remapped zoom works");
   await page.keyboard.press("Escape");
 
@@ -184,7 +186,7 @@ exports.verify = async function verify({ browser, stub, site, root, out }) {
 
   // Save matched before/after screenshots using tracked baseline sources.
   const baseline = {};
-  for (const file of ["index.html", "app.css", "app.js"]) {
+  for (const file of ["index.html", "app.css", "app.js", "grid.js", "i18n.js"]) {
     baseline[file] = execFileSync("git", ["-c", `safe.directory=${root}`, "show", `HEAD:ui/${file}`], { cwd: root });
   }
   const framePath = path.join(out, "frame.jpg");
@@ -194,8 +196,17 @@ exports.verify = async function verify({ browser, stub, site, root, out }) {
     const before = await browser.newPage({ viewport });
     await before.route("http://zaru-preview.test/**", route => {
       const name = new URL(route.request().url()).pathname.slice(1) || "index.html";
-      const body = baseline[name] ?? (name.startsWith("fonts/") ? fs.readFileSync(path.join(root, "ui", name)) : "");
-      return route.fulfill({ body, contentType: name.endsWith(".css") ? "text/css" : name.endsWith(".js") ? "text/javascript" : name.endsWith(".woff2") ? "font/woff2" : "text/html" });
+      // Fonts and locale files are read from the working tree: the baseline is
+      // there to compare layout, and a page that cannot fetch its strings never
+      // finishes loading at all.
+      const fromDisk = name.startsWith("fonts/") || name.startsWith("locales/");
+      const body = baseline[name] ?? (fromDisk ? fs.readFileSync(path.join(root, "ui", name)) : "");
+      const contentType = name.endsWith(".css") ? "text/css"
+        : name.endsWith(".js") ? "text/javascript"
+        : name.endsWith(".json") ? "application/json"
+        : name.endsWith(".woff2") ? "font/woff2"
+        : "text/html";
+      return route.fulfill({ body, contentType });
     });
     await before.addInitScript(baselineStub);
     await before.goto("http://zaru-preview.test/index.html");

@@ -25,6 +25,7 @@
         <summary data-i18n-attr="aria-label:nav.more" data-i18n="nav.more"></summary>
         <div><button data-command="help" data-i18n="action.help"></button><button data-command="settings" data-i18n="action.settings"></button></div>
       </details>
+      <button data-command="sendTo" data-session data-i18n="action.sendTo"></button>
       <button class="primary" data-command="apply" data-session><span data-i18n="action.apply"></span> <span class="shortcut">Ctrl ↵</span></button>
     </nav>
   </header>
@@ -156,6 +157,12 @@
       <select id="language"></select>
     </label>
     <p id="language-folder" class="muted"></p>
+    <h3 data-i18n="settings.sendToTitle"></h3>
+    <p data-i18n="settings.sendToBody"></p>
+    <label class="choice choice-select">
+      <select id="send-to"></select>
+    </label>
+    <p class="hint"><button id="send-to-browse" data-i18n="settings.sendToBrowse"></button></p>
     <h3 data-i18n="settings.xmpTitle"></h3>
     <p data-i18n="settings.xmpBody"></p>
     <label class="choice">

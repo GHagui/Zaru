@@ -77,11 +77,9 @@ fn movie_header<R: std::io::Read + std::io::Seek>(
         (be_u64(&p, 4)?, be_u32(&p, 20)? as u64, be_u64(&p, 24)?)
     };
 
-    let duration_ms = if timescale > 0 {
-        duration.saturating_mul(1000) / timescale
-    } else {
-        0
-    };
+    // A zero timescale is meaningless and would divide by zero; a file that
+    // carries one simply has no duration to report.
+    let duration_ms = duration.saturating_mul(1000).checked_div(timescale).unwrap_or(0);
 
     // Zero means "not recorded", and the QuickTime epoch is 1904, not 1970.
     let captured_ms = (created > 0).then(|| (created as i64 - EPOCH_OFFSET) * 1000);

@@ -11,11 +11,8 @@ Câmera alvo: Canon EOS R50 (CR3).
 
 ## Estado
 
-**Fases 0, 1, 2 e 4 — concluídas.** Navegação, marcação, desfazer, gravação de
-XMP e o acabamento visual.
-
-**Fase 3 fica de fora:** não há coleções (`N`, `M`), não há tela de Aplicar e
-nenhum arquivo é movido. `Ctrl+Enter` grava os sidecars e para por aí.
+**Completo.** Navegação, marcação, desfazer, coleções, gravação de XMP, mover
+arquivos e o acabamento visual.
 
 | Crate | O quê |
 |---|---|
@@ -29,7 +26,7 @@ nenhum arquivo é movido. `Ctrl+Enter` grava os sidecars e para por aí.
 tem display, e sem isso a lógica das fases 1 e 2 ficaria sem teste nenhum.
 
 ```
-cargo test --workspace --exclude zaru      # 38 testes, sem webview
+cargo test --workspace --exclude zaru      # 56 testes, sem webview
 cargo run --bin zaru-probe -- example_cr3.CR3 -o preview.jpg
 cargo run --bin zaru-mark  -- IMG_4821.CR3 --rating 4 --label Green
 cargo build --release --target x86_64-pc-windows-gnu
@@ -53,8 +50,9 @@ binário para outro computador.
 | `A` `R` `S` `T` `G` | 1 a 5 estrelas; a mesma tecla zera |
 | `Espaço` | etiqueta verde |
 | `Backspace` | rejeita e avança |
+| `N` / `M` | nova coleção / mover para uma coleção |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | desfaz / refaz |
-| `Ctrl+Enter` | grava os `.xmp` |
+| `Ctrl+Enter` | aplicar |
 | `O` / `C` / `?` | abrir pasta / ajustes / teclas |
 
 Tudo é lido de `event.key`, nunca de `event.code`. Com Colemak-DH ativo no
@@ -81,7 +79,13 @@ decodifica nada, então o gargalo é o decode do JPEG de 6000×4000 pelo WebView
   `img.decode()`. A tecla só troca qual deles está visível.
 
 A barra inferior mostra a mediana e o p95 do tempo entre a tecla e a pintura,
-medidos ao vivo. O critério de aceite da Fase 1 é um número, não uma impressão.
+medidos ao vivo. O critério de aceite da Fase 1 é um número, não uma impressão:
+**12,3 ms** medidos numa pasta real, contra um orçamento de 16 ms — um frame a
+60 Hz.
+
+Por isso o plano de contingência não existe: estava previsto cair para a prévia
+`PRVW` de 1620×1080 durante a navegação rápida se o decode da imagem inteira não
+coubesse no orçamento. Coube. A resolução total fica o tempo todo.
 
 ## Onde fica a prévia num CR3
 
@@ -118,6 +122,61 @@ Dois detalhes que o container esconde:
 - **Nem todo CR3 põe um JPEG no trak #1.** A varredura de tracks é protegida
   pelo magic `FF D8 FF` e cai para a box `PRVW` quando nenhum track serve.
 
+## Coleções
+
+Uma coleção é uma subpasta da pasta de trabalho. Sem banco, sem catálogo, sem
+estado escondido.
+
+```
+2026-09-05-interlagos/
+├── IMG_4820.CR3
+├── IMG_4820.xmp
+├── porsche/
+├── ferrari/
+└── descarte/
+```
+
+`N` cria — modal longo, campo de texto, e enquanto está aberto **todas** as
+teclas pertencem ao campo; sem isso o usuário entra no modo sem querer e as
+próximas cinco teclas viram nome de pasta. `M` atribui — modal curto, lista
+numerada, uma tecla de `1` a `9` e fecha. Daí o limite de nove coleções: uma
+décima não teria tecla. `0` tira a foto da coleção. Uma foto pertence a no
+máximo uma.
+
+Nada disso toca o disco durante a triagem. Mover arquivo no meio do laço
+invalidaria o índice da lista, que é todo o senso de "onde estou" do app, e
+faria "próxima foto" significar coisa diferente a cada tecla. As coleções vivem
+em memória até o passo de Aplicar; abandonar a sessão não deixa pasta vazia
+para trás.
+
+## Aplicar
+
+`Ctrl+Enter` mostra o que vai acontecer antes de acontecer:
+
+```
+487  fotos avaliadas
+312  vão receber .xmp
+ 84  vão para porsche/ (168 arquivos)
+ 61  vão para ferrari/
+103  rejeitadas — permanecem onde estão
+753  sem marcação, ficam como estão
+```
+
+Mover arquivo é a única coisa irreversível que o Zaru faz, então a prévia não é
+enfeite. Colisões de nome são detectadas **antes** de qualquer escrita, e
+enquanto existir uma o Aplicar se recusa a começar — nada pela metade.
+
+Depois de confirmar: os `.xmp` primeiro, os moves depois. Nessa ordem sempre,
+senão o sidecar recém-escrito ficaria para trás enquanto a foto vai para a
+coleção. Cada CR3 leva junto tudo que compartilha o *stem* — o `.xmp` e o
+`.JPG` irmão, se a câmera estava em RAW+JPEG. O casamento é pelo prefixo
+`nome.`, e não pelo *stem* que o sistema calcula, porque o sidecar do darktable
+é `IMG_4821.CR3.xmp`: o *stem* dele é `IMG_4821.CR3`, não `IMG_4821`. O ponto no
+prefixo é o que mantém `IMG_48210.CR3` de fora.
+
+Se um move falhar — permissão, disco cheio — a execução para ali, diz em qual
+arquivo, e tudo depois dele fica intacto.
+
 ## Direção visual
 
 Neobrutalismo, com uma restrição vinda do assunto que manda em tudo o que vem
@@ -151,6 +210,11 @@ offline. O eixo de largura faz a hierarquia que normalmente pediria uma segunda
 fonte: contador em 125% de largura e peso 800, interface em 100%, informação
 secundária em 87%. Números sempre em `tabular-nums`, senão o contador dança a
 cada foto e o olho persegue o movimento.
+
+O chip de coleção é colorido por hash do nome, com borda e texto pretos como
+todo o resto. O hash passa por uma avalanche antes de virar matiz: multiplicar
+e somar preserva vizinhança, e punha "porsche" e "ferrari" a sete graus de
+distância — o mesmo rosa duas vezes.
 
 A nota aparece como cinco células duras em vez de estrelas — no peso de borda
 do resto da interface, uma fileira de quadrados preenchidos se lê como nota num

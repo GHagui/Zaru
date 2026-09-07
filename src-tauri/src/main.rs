@@ -14,7 +14,9 @@ use std::sync::Mutex;
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
-use zaru_core::{Frame, MarkChange, Prefetch, Session, SessionView, Settings, WriteReport};
+use zaru_core::{
+    ApplyPlan, ApplyReport, Frame, PhotoChange, Prefetch, Session, SessionView, Settings,
+};
 
 /// The colour Zaru puts on a photo. `xmp:Label` holds one colour per photo,
 /// and green is the only one the keyboard reaches.
@@ -51,7 +53,15 @@ async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
 fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, String> {
     let mut session = state.session.lock().unwrap();
     session.open(Path::new(&path))?;
+    reload_frames(&state, &session);
+    state.prefetch.slide(0);
+    Ok(session.view())
+}
 
+/// Points the prefetch pool at the session's current paths. Called on open, and
+/// again after Apply, because a photo that moved into a collection lives
+/// somewhere else now.
+fn reload_frames(state: &AppState, session: &Session) {
     state.prefetch.load(
         session
             .photos()
@@ -63,9 +73,6 @@ fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, 
             })
             .collect(),
     );
-    state.prefetch.slide(0);
-
-    Ok(session.view())
 }
 
 /// Navigation itself never crosses this boundary — the front end swaps between
@@ -76,27 +83,27 @@ fn set_index(state: State<'_, AppState>, index: usize) {
 }
 
 #[tauri::command]
-fn set_star(state: State<'_, AppState>, index: usize, stars: i8) -> Option<MarkChange> {
+fn set_star(state: State<'_, AppState>, index: usize, stars: i8) -> Option<PhotoChange> {
     state.session.lock().unwrap().set_star(index, stars)
 }
 
 #[tauri::command]
-fn toggle_reject(state: State<'_, AppState>, index: usize) -> Option<MarkChange> {
+fn toggle_reject(state: State<'_, AppState>, index: usize) -> Option<PhotoChange> {
     state.session.lock().unwrap().toggle_reject(index)
 }
 
 #[tauri::command]
-fn toggle_label(state: State<'_, AppState>, index: usize) -> Option<MarkChange> {
+fn toggle_label(state: State<'_, AppState>, index: usize) -> Option<PhotoChange> {
     state.session.lock().unwrap().toggle_label(index, LABEL)
 }
 
 #[tauri::command]
-fn undo(state: State<'_, AppState>) -> Option<MarkChange> {
+fn undo(state: State<'_, AppState>) -> Option<PhotoChange> {
     state.session.lock().unwrap().undo()
 }
 
 #[tauri::command]
-fn redo(state: State<'_, AppState>) -> Option<MarkChange> {
+fn redo(state: State<'_, AppState>) -> Option<PhotoChange> {
     state.session.lock().unwrap().redo()
 }
 
@@ -115,10 +122,41 @@ fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settin
     Ok(settings)
 }
 
+/// Registers a collection. Nothing is created on disk until Apply, so a session
+/// the user walks away from leaves no empty folders behind.
 #[tauri::command]
-fn write_xmp(state: State<'_, AppState>) -> WriteReport {
+fn new_collection(state: State<'_, AppState>, name: String) -> Result<Vec<String>, String> {
+    let mut session = state.session.lock().unwrap();
+    session.new_collection(&name)?;
+    Ok(session.collections().to_vec())
+}
+
+#[tauri::command]
+fn assign(
+    state: State<'_, AppState>,
+    index: usize,
+    collection: Option<usize>,
+) -> Option<PhotoChange> {
+    state.session.lock().unwrap().assign(index, collection)
+}
+
+/// What Apply would do. The preview is not decoration: moving files is the only
+/// irreversible thing Zaru does, and it should never be a surprise.
+#[tauri::command]
+fn plan(state: State<'_, AppState>) -> ApplyPlan {
     let styles = state.settings.lock().unwrap().xmp_compat.styles();
-    state.session.lock().unwrap().write_xmp(styles)
+    state.session.lock().unwrap().plan(styles)
+}
+
+#[tauri::command]
+fn apply(state: State<'_, AppState>) -> ApplyReport {
+    let styles = state.settings.lock().unwrap().xmp_compat.styles();
+    let mut session = state.session.lock().unwrap();
+    let report = session.apply(styles);
+    // Some photos live in a subfolder now, so the cached byte ranges point at
+    // paths that no longer exist.
+    reload_frames(&state, &session);
+    report
 }
 
 fn main() {
@@ -161,7 +199,10 @@ fn main() {
             redo,
             get_settings,
             set_settings,
-            write_xmp,
+            new_collection,
+            assign,
+            plan,
+            apply,
         ])
         .run(tauri::generate_context!())
         .expect("Zaru failed to start");

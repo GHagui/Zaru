@@ -137,6 +137,11 @@ html, body {
 .chip-green { background: var(--green); }
 .chip-reject { background: var(--reject); }
 
+/* A collection has no meaning Zaru can colour it by, so the colour comes from
+   a hash of its name: stable, distinct, and never mistaken for the three chips
+   that do carry meaning. Black border and black text, like everything else. */
+.chip-collection { background: var(--chip, var(--chrome)); }
+
 /* Before a folder is open there is nothing to count and nothing to rate, and a
    placeholder dash in the corner is just noise wearing a value's clothes. */
 body.idle .counter,
@@ -151,6 +156,59 @@ body.idle .chip { display: none; }
   50% { filter: invert(1); }
 }
 .flash { animation: zaru-flash 110ms steps(1, end) 1; }
+
+/* ------------------------------------------------------ pickers and fields */
+
+/* The collection list is picked by digit, so the digit is the object on the
+   left and the name reads off it. */
+.picker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 8px 14px;
+  align-items: center;
+}
+.picker li { display: contents; }
+.picker b { font-weight: 500; font-stretch: 87%; font-variant-numeric: tabular-nums; }
+.picker .none { grid-column: 1 / -1; font-stretch: 87%; }
+
+input[type="text"] {
+  display: block;
+  width: 100%;
+  padding: 8px 11px;
+  font: inherit;
+  font-weight: 600;
+  font-stretch: 100%;
+  color: var(--ink);
+  background: #FFF;
+  border: var(--rule) solid var(--ink);
+  border-radius: 0;
+}
+input[type="text"]::placeholder { color: #0006; font-weight: 400; }
+/* The field already has the 3px rule; a separate ring outside it reads as two
+   boxes. Focus thickens the rule it already has instead. */
+input[type="text"]:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--rule) var(--ink);
+}
+
+.failure { font-weight: 700; }
+.blockers { margin-top: 14px; }
+.blockers ul { margin: 6px 0 0; padding-left: 20px; font-stretch: 87%; }
+.blockers li { margin: 2px 0; }
+
+.hint button { margin-right: 12px; }
+button[disabled] {
+  cursor: not-allowed;
+  color: #0007;
+  background: repeating-linear-gradient(
+    45deg, var(--chrome), var(--chrome) 5px, #0000000f 5px, #0000000f 10px
+  );
+  box-shadow: none;
+}
+button[disabled]:active { transform: none; }
 
 /* --------------------------------------------------------------- visor */
 
@@ -246,7 +304,8 @@ body.idle .chip { display: none; }
 }
 .tally dd { margin: 0; }
 .tally + .hint { margin-top: 28px; }
-.tally .failure { grid-column: 1 / -1; justify-self: start; font-weight: 700; }
+.tally .failure { grid-column: 1 / -1; justify-self: start; }
+.tally .note { font-stretch: 87%; }
 
 .keys {
   display: grid;

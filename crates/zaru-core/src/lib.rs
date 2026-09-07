@@ -5,10 +5,14 @@
 //! None of it depends on Tauri, so it can be tested without a webview — which
 //! matters, because the machine this is developed on has no display.
 
+pub mod collections;
 pub mod prefetch;
 pub mod session;
 pub mod settings;
 
+pub use collections::MAX_COLLECTIONS;
 pub use prefetch::{Frame, Prefetch};
-pub use session::{MarkChange, PhotoView, Session, SessionView, WriteReport};
+pub use session::{
+    ApplyPlan, ApplyReport, PhotoChange, PhotoView, PlannedMove, Session, SessionView, WriteReport,
+};
 pub use settings::{Settings, XmpCompat};

@@ -31,9 +31,48 @@
     <span id="label" class="chip chip-green" hidden>verde</span>
     <span id="name" class="name"></span>
     <span class="spacer"></span>
+    <span id="collection" class="chip chip-collection" hidden></span>
     <span id="latency" class="latency" title="tempo entre a tecla e a pintura"></span>
     <button id="config">Ajustes</button>
   </footer>
+
+  <div id="newCollection" class="panel" hidden>
+    <h2>Nova coleção</h2>
+    <p>
+      Uma coleção é uma subpasta da pasta de trabalho, e nada além disso. A
+      pasta só é criada quando você aplicar.
+    </p>
+    <input id="collection-name" type="text" maxlength="64"
+           autocomplete="off" autocapitalize="off" spellcheck="false"
+           placeholder="porsche">
+    <p id="collection-error" class="failure" hidden></p>
+    <p class="hint"><kbd>Enter</kbd> confirma · <kbd>Esc</kbd> cancela</p>
+  </div>
+
+  <div id="move" class="panel" hidden>
+    <h2>Mover para</h2>
+    <ol id="move-list" class="picker"></ol>
+    <p class="hint"><kbd>0</kbd> tira da coleção · <kbd>Esc</kbd> cancela</p>
+  </div>
+
+  <div id="apply" class="panel" hidden>
+    <h2>Aplicar</h2>
+    <dl id="apply-body" class="tally"></dl>
+    <div id="apply-blockers" class="blockers" hidden>
+      <p class="failure">Isso impede a aplicação. Nada foi tocado.</p>
+      <ul id="apply-blocker-list"></ul>
+    </div>
+    <p class="hint">
+      <button id="apply-go">Aplicar</button>
+      <kbd>Enter</kbd> aplica · <kbd>Esc</kbd> cancela
+    </p>
+  </div>
+
+  <div id="report" class="panel" hidden>
+    <h2 id="report-title">Aplicado</h2>
+    <dl id="report-body" class="tally"></dl>
+    <p class="hint"><kbd>Esc</kbd> fecha</p>
+  </div>
 
   <div id="settings" class="panel" hidden>
     <h2>Compatibilidade do XMP</h2>
@@ -60,12 +99,6 @@
     <p class="hint"><kbd>Esc</kbd> fecha</p>
   </div>
 
-  <div id="report" class="panel" hidden>
-    <h2>XMP gravado</h2>
-    <dl id="report-body" class="tally"></dl>
-    <p class="hint"><kbd>Esc</kbd> fecha</p>
-  </div>
-
   <div id="help" class="panel" hidden>
     <h2>Teclas</h2>
     <dl class="keys">
@@ -74,9 +107,11 @@
       <dt>A R S T G</dt><dd>1 a 5 estrelas; a mesma tecla zera</dd>
       <dt>Espaço</dt><dd>etiqueta verde</dd>
       <dt>Backspace</dt><dd>rejeita e avança</dd>
+      <dt>N</dt><dd>nova coleção</dd>
+      <dt>M</dt><dd>mover para uma coleção</dd>
       <dt>Ctrl+Z</dt><dd>desfaz</dd>
       <dt>Ctrl+Shift+Z</dt><dd>refaz</dd>
-      <dt>Ctrl+Enter</dt><dd>grava os .xmp</dd>
+      <dt>Ctrl+Enter</dt><dd>aplicar: grava os .xmp e move os arquivos</dd>
       <dt>O</dt><dd>abrir pasta</dd>
       <dt>C</dt><dd>ajustes</dd>
       <dt>?</dt><dd>estas teclas</dd>

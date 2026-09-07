@@ -51,28 +51,58 @@ const photos = Array.from({ length: 1240 }, (_, i) => ({
   mirrored: false,
 }));
 const marks = photos.map(() => ({ rating: 0, label: null }));
+const assigned = photos.map(() => null);
+const collections = [];
 let settings = { xmpCompat: "lightroom" };
+const at = (index) => ({ index, mark: marks[index], collection: assigned[index] });
 const commands = {
   pick_folder: () => "D:\\\\fotos\\\\2026-09-05-interlagos",
-  open_folder: () => ({ folder: "D:\\\\fotos\\\\2026-09-05-interlagos", photos, marks }),
+  open_folder: () => ({
+    folder: "D:\\\\fotos\\\\2026-09-05-interlagos",
+    photos, marks, collections, assigned,
+  }),
   get_settings: () => settings,
   set_settings: (a) => (settings = a.settings),
   set_index: () => {},
   set_star: ({ index, stars }) => {
     marks[index].rating = marks[index].rating === stars ? 0 : stars;
-    return { index, mark: marks[index] };
+    return at(index);
   },
   toggle_reject: ({ index }) => {
     marks[index].rating = marks[index].rating === -1 ? 0 : -1;
-    return { index, mark: marks[index] };
+    return at(index);
   },
   toggle_label: ({ index }) => {
     marks[index].label = marks[index].label ? null : "Green";
-    return { index, mark: marks[index] };
+    return at(index);
+  },
+  new_collection: ({ name }) => {
+    const clean = name.trim();
+    if (!clean) throw new Error("o nome não pode ser vazio");
+    if (collections.some((c) => c.toLowerCase() === clean.toLowerCase())) {
+      throw new Error("já existe uma coleção chamada " + clean);
+    }
+    collections.push(clean);
+    return collections;
+  },
+  assign: ({ index, collection }) => {
+    assigned[index] = collection;
+    return at(index);
   },
   undo: () => null,
   redo: () => null,
-  write_xmp: () => ({ written: 312, skipped: 753, rejected: 103, error: null }),
+  plan: () => ({
+    evaluated: 487, sidecars: 312, rejected: 103, untouched: 753,
+    moves: [
+      { collection: "porsche", photos: 84, files: 168 },
+      { collection: "ferrari", photos: 61, files: 61 },
+    ],
+    blockers: [],
+  }),
+  apply: () => ({
+    sidecars: 312, moved: 145, filesMoved: 229,
+    rejected: 103, untouched: 753, error: null,
+  }),
 };
 window.__TAURI__ = {
   core: {
@@ -126,6 +156,30 @@ window.__TAURI__ = {
 
   await press("k", 22);
   await shot("portrait");
+
+  // Phase 3: a collection, the picker, and the Apply preview.
+  await press("n");
+  await page.fill("#collection-name", "porsche");
+  await shot("new-collection");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(200);
+  await shot("move");
+  await press("1");
+
+  await press("n");
+  await page.fill("#collection-name", "ferrari");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(200);
+  await press("Escape");
+  await press("h");
+  await press("m");
+  await shot("move-two");
+  await press("2");
+  await shot("assigned");
+
+  await page.keyboard.press("Control+Enter");
+  await shot("apply");
+  await page.keyboard.press("Escape");
 
   await press("c");
   await shot("settings");

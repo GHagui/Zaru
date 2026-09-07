@@ -78,3 +78,31 @@ fn the_shutter_time_comes_from_cmt2_with_its_fraction() {
     assert_eq!(captured % 1000, 80, "the sub-second field is hundredths");
     assert_eq!(captured / 1000, 1_787_208_047);
 }
+
+#[test]
+fn the_exposure_the_camera_recorded_comes_back_readable() {
+    let info = probe(fixture()).expect("probe");
+    let exif = &info.exif;
+
+    assert_eq!(exif.camera.as_deref(), Some("Canon EOS R50"));
+    // Written the way a photographer says it, not as 0.001.
+    assert_eq!(exif.shutter.as_deref(), Some("1/1000"));
+    assert_eq!(exif.iso, Some(800));
+    assert_eq!((exif.width, exif.height), (Some(6000), Some(4000)));
+}
+
+#[test]
+fn what_the_lens_never_reported_stays_absent() {
+    // This frame was shot on a lens with no electronics, so the body wrote
+    // 0/1 for aperture and focal length and left the name blank. Turning that
+    // into "f/0" and "0mm" would be inventing data the camera never had.
+    let exif = probe(fixture()).expect("probe").exif;
+    assert_eq!(exif.aperture, None);
+    assert_eq!(exif.focal_mm, None);
+    assert_eq!(exif.lens, None);
+
+    // But zero exposure compensation is a real answer, not a missing one, and
+    // the same zero must not be swallowed here.
+    assert_eq!(exif.exposure_bias, Some(0.0));
+    assert!(!exif.is_empty(), "shutter and ISO are there");
+}

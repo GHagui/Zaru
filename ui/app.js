@@ -343,7 +343,28 @@ function renderStatus() {
     b.disabled = !hasPhoto || state.busy;
   });
   window.gridUI?.renderStatus();
+  renderExif();
 }
+
+/// Exif records no time zone, and `captured` was built as if the wall clock the
+/// camera showed were UTC. Formatting in the machine's zone would slide every
+/// timestamp by the local offset — three hours in Brazil — and the caption
+/// would then lie about when the shutter fired.
+const UTC = { timeZone: "UTC" };
+
+function gridTimestamp(ms) {
+  if (ms == null) return "";
+  const d = new Date(ms);
+  const two = (n) => String(n).padStart(2, "0");
+  return `${two(d.getUTCDate())}/${two(d.getUTCMonth() + 1)} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
+}
+
+function fullTimestamp(ms) {
+  const d = new Date(ms);
+  return d.toLocaleString("pt-BR", { ...UTC, dateStyle: "short", timeStyle: "medium" });
+}
+
+window.zaruTime = { gridTimestamp, fullTimestamp };
 
 function goto(position, pressedAt) {
   if (!state.visible.length || state.busy) return;
@@ -1158,6 +1179,7 @@ async function executeAction(action, whole = false) {
     case "help": return openModal("help");
     case "clearFilter": return setFilter(0);
     case "collections": return toggleCollections();
+    case "exif": return toggleExif();
   }
   if (!state.photos.length) return;
   if (window.gridUI?.active && window.gridUI.actions.has(action)) return window.gridUI.action(action);
@@ -1388,6 +1410,56 @@ function toggleCollections() {
   document.querySelectorAll('[data-command="collections"]').forEach(button => button.setAttribute("aria-expanded", String(open)));
   renderStatus();
   if (!open) document.querySelector('nav [data-command="collections"]').focus();
+}
+
+/// The panel stays open while you navigate, so a burst can be compared field by
+/// field. Closing it stops the fetching too.
+function toggleExif(force) {
+  const open = force ?? el("exif-sidebar").hidden;
+  el("exif-sidebar").hidden = !open;
+  document.body.classList.toggle("exif-open", open);
+  document.querySelectorAll('[data-command="exif"]').forEach(b => b.setAttribute("aria-expanded", String(open)));
+  if (open) renderExif();
+  else document.querySelector('nav [data-command="exif"]')?.focus();
+}
+
+/// Only the fields the camera actually recorded get a row.
+///
+/// An adapted manual lens reports no aperture, no focal length and no name, so
+/// a fixed list would be half blank on every frame. Four true rows read better
+/// than ten with six dashes.
+async function renderExif() {
+  if (el("exif-sidebar").hidden || !state.photos.length) return;
+  const index = current();
+  const exif = await invoke("exif", { index }).catch(() => null);
+  if (el("exif-sidebar").hidden) return;
+
+  const rows = [];
+  const photo = state.photos[index];
+  if (exif) {
+    if (exif.shutter) rows.push(["obturador", exif.shutter]);
+    if (exif.aperture != null) rows.push(["abertura", `f/${exif.aperture.toFixed(1)}`]);
+    if (exif.iso != null) rows.push(["ISO", String(exif.iso)]);
+    if (exif.focalMm != null) rows.push(["focal", `${Math.round(exif.focalMm)} mm`]);
+    if (exif.exposureBias != null && exif.exposureBias !== 0) {
+      rows.push(["compensação", `${exif.exposureBias > 0 ? "+" : ""}${exif.exposureBias.toFixed(1)} EV`]);
+    }
+    if (exif.width && exif.height) rows.push(["tamanho", `${exif.width} × ${exif.height}`]);
+    if (exif.camera) rows.push(["câmera", exif.camera]);
+    if (exif.lens) rows.push(["lente", exif.lens]);
+  }
+  if (photo?.captured != null) rows.push(["disparo", fullTimestamp(photo.captured)]);
+
+  const body = el("exif-body");
+  body.replaceChildren();
+  for (const [label, value] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    body.append(dt, dd);
+  }
+  el("exif-empty").hidden = rows.length > 0;
 }
 
 function renderShortcutHints() {

@@ -57,6 +57,18 @@ fn main() -> ExitCode {
         if mirrored { ", mirrored" } else { "" }
     );
     println!("  sensor      {}x{}", info.sensor_width, info.sensor_height);
+    let e = &info.exif;
+    let show = |label: &str, value: Option<String>| {
+        println!("  {label:<11} {}", value.unwrap_or_else(|| "—".into()));
+    };
+    show("camera", e.camera.clone());
+    show("lente", e.lens.clone());
+    show("obturador", e.shutter.clone());
+    show("abertura", e.aperture.map(|v| format!("f/{v:.1}")));
+    show("iso", e.iso.map(|v| v.to_string()));
+    show("focal", e.focal_mm.map(|v| format!("{v:.0}mm")));
+    show("compensa", e.exposure_bias.map(|v| format!("{v:+.1} EV")));
+
     match info.captured_ms {
         Some(ms) => println!("  disparo     {}.{:03} (ms do epoch)", ms / 1000, ms % 1000),
         None => println!("  disparo     ausente"),

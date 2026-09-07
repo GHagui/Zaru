@@ -97,6 +97,16 @@ body.collections-open { --side: 260px; }
 .sidebar-heading h2 { font-size: 17px; margin: 0; }
 .sidebar-heading button { font-size: 20px; background: transparent; border: 0; }
 #collections-sidebar p { font-size: 12px; }
+
+/* Against the opposite edge from the collections, so both can be open without
+   either one crossing the image. */
+#exif-sidebar { position: fixed; top: var(--top); bottom: var(--bottom); right: 0; width: 232px; z-index: 2; padding: 20px 16px; background: var(--chrome); border-left: 1px solid var(--line); overflow-y: auto; }
+body.exif-open #stage, body.exif-open .bar-bottom { right: 232px; }
+.exif-list { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px 14px; margin: 0; font-size: 12px; }
+.exif-list dt { color: var(--muted); }
+/* Numbers line up so a burst can be compared down the column. */
+.exif-list dd { margin: 0; font-variant-numeric: tabular-nums; }
+.exif-list .wide { grid-column: 1 / -1; color: var(--muted); }
 .collection-list { display: grid; gap: 8px; margin: 18px 0; }
 .collection-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; text-align: left; width: 100%; gap: 8px; }
 .collection-row .collection-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chip); }
@@ -209,6 +219,8 @@ body.grid-mode #ring, body.grid-mode #divider, body.grid-mode .pane-tag { displa
 .grid-caption { display: flex; flex-direction: column; padding: 8px 10px; gap: 3px; font-size: 11px; }
 .grid-caption > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .grid-marks { color: var(--star); min-height: 17px; }
+/* The clock, in the camera's own wall time, under every tile. */
+.grid-when { color: var(--muted); font-variant-numeric: tabular-nums; }
 .grid-collection { color: var(--chip, var(--muted)); min-height: 17px; }
 .pending-dot { float: right; color: #edcd79; }
 .thumbnail-error { color: var(--muted); font-size: 11px; padding: 10px; text-align: center; }

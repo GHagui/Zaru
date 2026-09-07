@@ -13,6 +13,7 @@ pub mod session;
 pub mod settings;
 
 pub use keymap::Keymap;
+pub use zaru_cr3::Exif;
 pub use prefetch::{Frame, Prefetch};
 pub use recovery::{Recovery, RecoveryOffer};
 pub use session::{

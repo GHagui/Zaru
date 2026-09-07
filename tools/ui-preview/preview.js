@@ -50,6 +50,7 @@ const photos = Array.from({ length: 1240 }, (_, i) => ({
   width: 6000, height: 4000,
   rotation: i === 3 ? 90 : 0,
   mirrored: false,
+  captured: Date.UTC(2026, 7, 20, 6, 40, 47) + Math.floor(i / BURST) * 9000 + (i % BURST) * 80,
   burst: Math.floor(i / BURST),
   burstIndex: i % BURST,
   burstSize: BURST,
@@ -62,7 +63,7 @@ const defaultKeymap = {
   prev: "k", next: "h",
   star1: "a", star2: "r", star3: "s", star4: "t", star5: "g",
   label: " ", reject: "Backspace",
-  zoom: "z", compare: "v", filter: "d",
+  zoom: "z", compare: "v", filter: "d", exif: "i",
   newCollection: "n", moveTo: "m", open: "o", settings: "c", help: "?",
   collections: ["q","w","f","p","b","j","l","u","y",";"],
 };
@@ -127,6 +128,19 @@ const commands = {
     });
     return out;
   },
+  exif: ({ index }) => ({
+    // Deliberately the shape a manual lens produces: no aperture, no focal
+    // length, no lens name. The panel has to look right in that case.
+    camera: "Canon EOS R50",
+    lens: null,
+    shutter: index % 3 === 0 ? "1/1000" : "1/640",
+    aperture: null,
+    iso: 800,
+    focalMm: null,
+    exposureBias: 0,
+    width: 6000,
+    height: 4000,
+  }),
   key_actions: () => ACTION_LABELS,
   bind_key: ({ action, key }) => {
     const flat = [

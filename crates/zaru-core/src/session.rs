@@ -47,6 +47,10 @@ pub struct PhotoView {
     pub burst: usize,
     pub burst_index: usize,
     pub burst_size: usize,
+    /// When the shutter fired, for the caption under each grid tile. One number
+    /// per photo is cheap; the rest of the Exif is fetched only when the panel
+    /// that shows it is open.
+    pub captured: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -150,6 +154,11 @@ pub struct Session {
 }
 
 impl Session {
+    /// What the camera recorded about one frame, for the info panel.
+    pub fn exif(&self, index: usize) -> Option<zaru_cr3::Exif> {
+        self.photos.get(index).map(|p| p.info.exif.clone())
+    }
+
     pub fn photos(&self) -> &[Photo] {
         &self.photos
     }
@@ -177,6 +186,7 @@ impl Session {
                         burst,
                         burst_index: i - self.burst_starts[burst],
                         burst_size: self.burst_sizes[burst],
+                        captured: p.info.captured_ms,
                     }
                 })
                 .collect(),

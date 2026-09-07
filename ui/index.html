@@ -15,6 +15,7 @@
       <div class="mode-switch" role="group" aria-label="Visualização"><button data-command="photo" data-session aria-pressed="true">Foto</button><button data-command="grid" data-session aria-pressed="false">Grade</button></div>
       <button data-command="open">Abrir pasta</button>
       <button data-command="filter" data-session>Filtros</button>
+      <button data-command="exif" data-session aria-expanded="false" aria-controls="exif-sidebar">Dados</button>
       <button data-command="collections" data-session aria-expanded="false" aria-controls="collections-sidebar">Coleções</button>
       <div class="secondary-actions">
         <button data-command="help">Ajuda</button>
@@ -35,6 +36,12 @@
     <div id="sidebar-list" class="collection-list"></div>
     <button data-command="unassign" data-photo class="wide">Remover atribuição</button>
     <p class="muted sidebar-tip">Alt + clique atribui a rajada inteira.</p>
+  </aside>
+
+  <aside id="exif-sidebar" hidden aria-labelledby="exif-title">
+    <div class="sidebar-heading"><h2 id="exif-title">Dados da foto</h2><button data-command="exif" aria-label="Fechar dados da foto">×</button></div>
+    <dl id="exif-body" class="exif-list"></dl>
+    <p id="exif-empty" class="muted" hidden>A câmera não gravou nada sobre esta foto.</p>
   </aside>
 
   <main id="stage">

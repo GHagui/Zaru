@@ -53,7 +53,37 @@ pub struct Preview {
     pub kind: PreviewKind,
 }
 
-#[derive(Clone, Copy, Debug)]
+/// What the camera recorded about the shot, as far as it knew.
+///
+/// Every field is optional and that is not defensive coding. An adapted manual
+/// lens tells the body nothing, so aperture, focal length and lens name simply
+/// are not there — the fixture in this repo is exactly that case. A missing
+/// field has to stay missing all the way to the screen; printing `f/0` would be
+/// worse than printing nothing.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct Exif {
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    /// Written the way a photographer says it: `1/1000`, or `2.5"` when long.
+    pub shutter: Option<String>,
+    pub aperture: Option<f32>,
+    pub iso: Option<u32>,
+    pub focal_mm: Option<f32>,
+    pub exposure_bias: Option<f32>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+impl Exif {
+    /// True when the camera recorded nothing worth showing.
+    pub fn is_empty(&self) -> bool {
+        *self == Exif::default()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Cr3Info {
     pub preview: Preview,
     pub thumbnail: Option<Preview>,
@@ -61,6 +91,7 @@ pub struct Cr3Info {
     pub orientation: u16,
     pub sensor_width: u32,
     pub sensor_height: u32,
+    pub exif: Exif,
     /// When the shutter fired, in milliseconds, from `CMT2`. Only differences
     /// between frames are meaningful — Exif records no time zone.
     pub captured_ms: Option<i64>,
@@ -122,17 +153,34 @@ impl PreviewSource for Cr3 {
         let sensor_width = tiff::uint(&ifd0, tiff::TAG_IMAGE_WIDTH).unwrap_or(0);
         let sensor_height = tiff::uint(&ifd0, tiff::TAG_IMAGE_HEIGHT).unwrap_or(0);
 
-        let exif = canon_tags(&mut r, &inside_moov, b"CMT2")?;
-        let captured_ms = tiff::text(&exif, tiff::TAG_DATE_TIME_ORIGINAL).and_then(|when| {
-            tiff::timestamp_ms(when, tiff::text(&exif, tiff::TAG_SUB_SEC_TIME_ORIGINAL))
+        let tags = canon_tags(&mut r, &inside_moov, b"CMT2")?;
+        let captured_ms = tiff::text(&tags, tiff::TAG_DATE_TIME_ORIGINAL).and_then(|when| {
+            tiff::timestamp_ms(when, tiff::text(&tags, tiff::TAG_SUB_SEC_TIME_ORIGINAL))
         });
+
+        let exif = Exif {
+            // The body is in IFD0; everything about the exposure is in the Exif IFD.
+            camera: match (tiff::text(&ifd0, tiff::TAG_MAKE), tiff::text(&ifd0, tiff::TAG_MODEL)) {
+                (_, Some(model)) => Some(model.to_string()),
+                (Some(make), None) => Some(make.to_string()),
+                (None, None) => None,
+            },
+            lens: tiff::text(&tags, tiff::TAG_LENS_MODEL).map(str::to_string),
+            shutter: tiff::shutter(&tags, tiff::TAG_EXPOSURE_TIME),
+            aperture: tiff::positive_f32(&tags, tiff::TAG_F_NUMBER),
+            iso: tiff::uint(&tags, tiff::TAG_ISO),
+            focal_mm: tiff::positive_f32(&tags, tiff::TAG_FOCAL_LENGTH),
+            exposure_bias: tiff::ratio_f32(&tags, tiff::TAG_EXPOSURE_BIAS),
+            width: tiff::uint(&tags, tiff::TAG_PIXEL_X),
+            height: tiff::uint(&tags, tiff::TAG_PIXEL_Y),
+        };
 
         let preview = track_preview(&mut r, &inside_moov)?
             .map(Ok)
             .unwrap_or_else(|| prvw_preview(&mut r, &top))?;
 
         let thumbnail = prvw_preview(&mut r, &top).ok();
-        Ok(Cr3Info { preview, thumbnail, orientation, sensor_width, sensor_height, captured_ms })
+        Ok(Cr3Info { preview, thumbnail, orientation, sensor_width, sensor_height, exif, captured_ms })
     }
 }
 

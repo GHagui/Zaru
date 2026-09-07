@@ -46,6 +46,10 @@
     card.tabIndex = index === focused ? 0 : -1;
     card.querySelector(".selection-tick").textContent = chosen ? "✓" : "";
     card.querySelector(".grid-marks").textContent = `${mark.rating === -1 ? "Rejeitada" : mark.rating > 0 ? "★".repeat(mark.rating) : "Sem nota"}${mark.label ? " · Verde" : ""}`;
+    // Sequential file names say nothing about when; the clock is what separates
+    // one burst from the next at a glance.
+    const when = card.querySelector(".grid-when");
+    if (when) when.textContent = window.zaruTime?.gridTimestamp(state.photos[index].captured) ?? "";
     const collection = state.assigned[index];
     const chip = card.querySelector(".grid-collection");
     chip.textContent = collection == null ? "Sem coleção" : state.collections[collection];
@@ -89,7 +93,7 @@
         if (!card) {
           card = document.createElement("div"); card.className = "grid-card"; card.dataset.index = index; card.setAttribute("role", "gridcell");
           card.setAttribute("aria-label", state.photos[index].name);
-          card.innerHTML = '<span class="selection-tick" aria-hidden="true"></span><div class="grid-image"></div><div class="grid-caption"><span class="grid-name"></span><span class="grid-marks"></span><span class="grid-collection"></span></div>';
+          card.innerHTML = '<span class="selection-tick" aria-hidden="true"></span><div class="grid-image"></div><div class="grid-caption"><span class="grid-name"></span><span class="grid-marks"></span><span class="grid-when"></span><span class="grid-collection"></span></div>';
           const name = card.querySelector(".grid-name");
           const dot = document.createElement("span"); dot.className = "pending-dot"; dot.title = "Alterações pendentes";
           name.textContent = state.photos[index].name; name.append(dot);

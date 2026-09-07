@@ -17,7 +17,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use zaru_core::keymap::ACTIONS;
 use zaru_core::{
-    ApplyOperation, BatchEdit, ApplyPlan, Frame, Keymap, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
     SessionView, Settings,
 };
 
@@ -199,6 +199,16 @@ fn assign_burst(
     touched(&state, state.session.lock().unwrap().assign_burst(index, collection))
 }
 
+/// What the camera recorded about one frame.
+///
+/// Per photo rather than in the session view: these fields only matter while
+/// the panel showing them is open, and multiplying ten of them by eighteen
+/// hundred photos in the opening payload would be paying for nothing.
+#[tauri::command]
+fn exif(state: State<'_, AppState>, index: usize) -> Option<Exif> {
+    state.session.lock().unwrap().exif(index)
+}
+
 /// Every rebindable action, with the label the settings screen shows.
 #[tauri::command]
 fn key_actions() -> Vec<(String, String)> {
@@ -346,6 +356,7 @@ fn main() {
             redo,
             get_settings,
             set_settings,
+            exif,
             key_actions,
             bind_key,
             reset_keymap,

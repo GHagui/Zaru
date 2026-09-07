@@ -13,27 +13,16 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Actions that take a single key. The order is the order they are listed in.
-pub const ACTIONS: &[(&str, &str)] = &[
-    ("grid", "alternar foto / grade"),
-    ("prev", "foto anterior"),
-    ("next", "próxima foto"),
-    ("star1", "1 estrela"),
-    ("star2", "2 estrelas"),
-    ("star3", "3 estrelas"),
-    ("star4", "4 estrelas"),
-    ("star5", "5 estrelas"),
-    ("label", "etiqueta verde"),
-    ("reject", "rejeitar e avançar"),
-    ("zoom", "zoom 1:1"),
-    ("compare", "comparar"),
-    ("filter", "filtrar"),
-    ("exif", "dados da foto"),
-    ("newCollection", "nova coleção"),
-    ("moveTo", "lista de coleções"),
-    ("open", "abrir pasta"),
-    ("settings", "ajustes"),
-    ("help", "teclas"),
+use crate::i18n::Message;
+
+/// Actions that take a single key, in the order the settings screen lists them.
+///
+/// Only the names live here. What each one is called on screen belongs to the
+/// locale files, under `keymapAction.<id>`, so a translator reaches these the
+/// same way they reach every other label.
+pub const ACTIONS: &[&str] = &[
+    "grid", "prev", "next", "star1", "star2", "star3", "star4", "star5", "label", "reject",
+    "zoom", "compare", "filter", "exif", "newCollection", "moveTo", "open", "settings", "help",
 ];
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -108,7 +97,7 @@ impl Keymap {
     pub fn entries(&self) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = ACTIONS
             .iter()
-            .map(|(id, _)| ((*id).to_string(), self.get(id).unwrap_or_default()))
+            .map(|id| ((*id).to_string(), self.get(id).unwrap_or_default()))
             .collect();
         for (i, key) in self.collections.iter().enumerate() {
             out.push((format!("collection{}", i + 1), key.clone()));
@@ -150,17 +139,20 @@ impl Keymap {
     /// Binds `key` to `action`, refusing anything that would leave two actions
     /// on one key. A silent overwrite would take a binding away somewhere the
     /// user is not looking.
-    pub fn set(&mut self, action: &str, key: &str) -> Result<(), String> {
+    pub fn set(&mut self, action: &str, key: &str) -> Result<(), Message> {
         if key.is_empty() {
-            return Err("tecla vazia".into());
+            return Err(Message::new("keymap.empty"));
         }
         if let Some((other, _)) = self
             .entries()
             .iter()
             .find(|(id, bound)| id != action && same_key(bound, key))
         {
-            let label = describe(other);
-            return Err(format!("{} já está em {label}", show(key)));
+            // The action that already owns the key is named, not written: the
+            // front end has its label in the reader's language already.
+            return Err(Message::new("keymap.taken")
+                .with("key", show(key))
+                .with("action", other));
         }
 
         let key = key.to_string();
@@ -186,7 +178,7 @@ impl Keymap {
             "help" => self.help = key,
             other => match self.collection_index(other) {
                 Some(i) if i < self.collections.len() => self.collections[i] = key,
-                _ => return Err(format!("ação desconhecida: {other}")),
+                _ => return Err(Message::new("keymap.unknownAction").with("action", other)),
             },
         }
         Ok(())
@@ -215,16 +207,6 @@ fn show(key: &str) -> String {
     }
 }
 
-fn describe(action: &str) -> String {
-    if let Some(rest) = action.strip_prefix("collection") {
-        return format!("coleção {rest}");
-    }
-    ACTIONS
-        .iter()
-        .find(|(id, _)| *id == action)
-        .map(|(_, label)| (*label).to_string())
-        .unwrap_or_else(|| action.to_string())
-}
 
 #[cfg(test)]
 mod tests {
@@ -261,7 +243,11 @@ mod tests {
     fn rebinding_refuses_to_steal_a_key_from_another_action() {
         let mut map = Keymap::default();
         let clash = map.set("zoom", "h").unwrap_err();
-        assert!(clash.contains("próxima foto"), "{clash}");
+        assert_eq!(clash.key, "keymap.taken");
+        // The action is named, not spelled out: the front end already knows how
+        // to say "next photo" in the reader's language.
+        assert_eq!(clash.params.get("action").map(String::as_str), Some("next"));
+        assert_eq!(clash.params.get("key").map(String::as_str), Some("h"));
         assert_eq!(map.zoom, "z", "and nothing changed");
 
         // Case is not a difference: `Q` and `q` are one key.

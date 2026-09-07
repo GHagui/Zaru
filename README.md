@@ -341,6 +341,48 @@ Também não revela RAW, não edita, não mantém catálogo e não importa cart�
 WebView2, não contra um webview do sistema, então mingw basta. O artefato
 `Zaru-win64` sai pronto de cada push.
 
+## Idiomas
+
+O Zaru vem em português, inglês, japonês e chinês simplificado. Ele abre no
+idioma do sistema e cai para o inglês se não tiver o do usuário; **Ajustes** tem
+um seletor para sobrepor, porque quem usa Windows em inglês e prefere outra
+língua não teria saída.
+
+Nenhuma frase mora no código. Isso vale inclusive para as mensagens que nascem
+no Rust — recusa de nome de coleção, impedimento do Aplicar, conflito de tecla:
+elas atravessam como **chave mais parâmetros**, nunca como frase pronta. Se
+ficassem escritas em Rust, um tradutor alcançaria todos os rótulos da interface
+e ainda assim esbarraria num punhado de mensagens numa língua que não lê — uma
+tradução que parece terminada e não está.
+
+Os parâmetros viajam separados do texto de propósito. `{name} já existe` e
+`{name} already exists` põem o nome em lugares diferentes, e uma frase montada
+por concatenação no Rust não poderia ser reordenada por quem traduz. Pelo mesmo
+motivo há a convenção `[[Esc]]`, que vira uma tecla desenhada: a frase inteira
+fica numa chave só e a tecla pode ir para onde a língua a puser.
+
+### Traduzir sem compilar nada
+
+1. Copie `ui/locales/en.json`.
+2. Traduza os valores, deixando as chaves e os `{buracos}` como estão.
+3. Salve como `<código-do-idioma>.json` — `it-IT.json`, `de.json`, `ko.json`.
+4. Largue o arquivo na pasta `locales` dentro do diretório de configuração do
+   app. O caminho exato aparece em **Ajustes**, embaixo do seletor.
+5. Reabra o Zaru. O idioma novo está na lista.
+
+Nada de Rust, nada de Node, nada de recompilar. Um arquivo que não faz parse é
+ignorado em vez de derrubar a abertura, então dá para editar com o app fechado e
+ir conferindo.
+
+Para mandar a tradução de volta, o arquivo vai em `ui/locales/` e
+`node tools/locales/check.js` confere contra o inglês: chave faltando, chave a
+mais, `{buraco}` perdido ou inventado, valor vazio e forma de plural ausente. O
+CI roda essa checagem em todo push.
+
+Chinês tradicional (`zh-Hant`) não vem embutido de propósito: não é o
+simplificado com outra fonte, e servir um pelo outro seria entregar texto errado
+em vez de um quase-acerto. Quem quiser é só largar o arquivo.
+
 ## Marca
 
 Um *zaru* (笊) é o cesto de bambu que escorre: o que importa fica, o resto passa.

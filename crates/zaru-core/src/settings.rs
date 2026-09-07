@@ -43,6 +43,9 @@ impl XmpCompat {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub xmp_compat: XmpCompat,
+    /// A language the user pinned. `None` means follow the system, which is
+    /// what almost everybody wants and nobody should have to configure.
+    pub language: Option<String>,
     pub keymap: Keymap,
 }
 

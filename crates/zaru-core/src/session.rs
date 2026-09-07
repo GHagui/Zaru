@@ -17,6 +17,7 @@ use crate::media::{self, Kind, MediaInfo};
 use zaru_xmp::{Marks, SidecarStyle, REJECTED};
 
 use crate::collections::validate;
+use crate::i18n::Message;
 use crate::recovery::Recovery;
 
 /// Frames closer together than this belong to the same burst.
@@ -91,7 +92,7 @@ pub struct ApplyPlan {
     pub moves: Vec<PlannedMove>,
     /// Problems that would make the run fail partway. While this is non-empty,
     /// Apply refuses to start.
-    pub blockers: Vec<String>,
+    pub blockers: Vec<Message>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -117,7 +118,7 @@ pub struct ApplyReport {
     pub untouched: usize,
     /// Where the run stopped. Everything before it is done and everything after
     /// it is untouched.
-    pub error: Option<String>,
+    pub error: Option<Message>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -127,7 +128,7 @@ pub struct WriteReport {
     pub skipped: usize,
     pub rejected: usize,
     /// First failure, if any. Writing stops there so the rest stays recoverable.
-    pub error: Option<String>,
+    pub error: Option<Message>,
 }
 
 enum Change {
@@ -207,9 +208,13 @@ impl Session {
     }
 
     /// Replaces the session with the CR3 files in `folder`, sorted by name.
-    pub fn open(&mut self, folder: &Path) -> Result<(), String> {
+    pub fn open(&mut self, folder: &Path) -> Result<(), Message> {
         let mut paths: Vec<PathBuf> = std::fs::read_dir(folder)
-            .map_err(|e| format!("{}: {e}", folder.display()))?
+            .map_err(|e| {
+                Message::new("folder.unreadable")
+                    .with("folder", folder.display())
+                    .with("reason", e)
+            })?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| media::is_supported(p))
@@ -217,16 +222,14 @@ impl Session {
         paths.sort();
 
         if paths.is_empty() {
-            return Err(format!("nenhuma foto ou vídeo em {}", folder.display()));
+            return Err(Message::new("folder.empty").with("folder", folder.display()));
         }
 
         let photos = probe_all(&paths);
         if photos.is_empty() {
-            return Err(format!(
-                "{} arquivos em {}, nenhum legível",
-                paths.len(),
-                folder.display()
-            ));
+            return Err(Message::new("folder.noneReadable")
+                .with("count", paths.len())
+                .with("folder", folder.display()));
         }
 
         let (bursts, burst_starts, burst_sizes) = group_bursts(&photos);
@@ -343,14 +346,12 @@ impl Session {
     ///
     /// `limit` is how many collection keys are bound: a collection the keyboard
     /// cannot reach is not worth having, so the key map is what caps this.
-    pub fn new_collection(&mut self, name: &str, limit: usize) -> Result<usize, String> {
+    pub fn new_collection(&mut self, name: &str, limit: usize) -> Result<usize, Message> {
         if self.photos.is_empty() {
-            return Err("abra uma pasta antes de criar coleções".into());
+            return Err(Message::new("collection.needsFolder"));
         }
         if self.collections.len() >= limit {
-            return Err(format!(
-                "o limite é {limit} coleções, uma por tecla mapeada"
-            ));
+            return Err(Message::new("collection.limit").with("limit", limit));
         }
         let name = validate(name, &self.collections)?;
         self.collections.push(name);
@@ -464,7 +465,7 @@ impl Session {
             }
             for style in styles {
                 if let Err(e) = zaru_xmp::apply(&photo.path, mark, *style) {
-                    report.error = Some(format!("{}: {e}", photo.name));
+                    report.error = Some(Message::new("apply.sidecarFailed").with("name", &photo.name).with("reason", e));
                     return report;
                 }
             }

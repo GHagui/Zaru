@@ -21,7 +21,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Io(e) => write!(f, "io: {e}"),
-            Error::Malformed(what) => write!(f, "container malformado: {what}"),
+            Error::Malformed(what) => write!(f, "malformed container: {what}"),
         }
     }
 }

@@ -14,7 +14,11 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
-body { background: var(--visor); color: var(--ink); font: 400 14px/1.5 "Archivo", system-ui, sans-serif; user-select: none; }
+/* Archivo has no CJK glyphs, and leaving the fallback to the system is a
+   gamble. Naming the faces Windows and macOS actually ship keeps Japanese and
+   Chinese from coming out as empty boxes. */
+:root { --sans: "Archivo", "Yu Gothic UI", "Hiragino Sans", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif; }
+body { background: var(--visor); color: var(--ink); font: 400 14px/1.5 var(--sans); user-select: none; }
 button, input, summary { font: inherit; }
 button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
 button:hover, summary:hover { background: #363636; border-color: #686868; }
@@ -131,6 +135,9 @@ body.exif-open #stage, body.exif-open .bar-bottom { right: 232px; }
 .panel h2.section { font-size: 16px; border-top: 1px solid var(--line); padding-top: 22px; margin-top: 24px; }
 .choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
 .choice:has(input:checked) { border-color: #aaa; background: #303030; }
+.choice-select { display: block; }
+#language { font: inherit; padding: 6px 8px; min-width: 220px; }
+#language-folder { font-size: 11px; word-break: break-all; margin-top: 6px; }
 .choice input { margin-top: 4px; accent-color: #ddd; }
 .choice span { min-width: 0; }
 .choice b { margin-right: 8px; }
@@ -140,7 +147,7 @@ code { font-size: 12px; color: #ccc; overflow-wrap: anywhere; margin-right: 8px;
 .keyrow { justify-content: space-between; text-align: left; white-space: normal; min-width: 0; background: transparent; font-size: 12px; }
 .keyrow span { min-width: 0; }
 .keyrow.capturing { border-color: var(--star); }
-kbd, .keys dt { border: 1px solid #555; border-radius: 4px; background: #333; color: #ddd; font: 400 11px/1.5 "Archivo", system-ui, sans-serif; padding: 2px 6px; flex: none; white-space: nowrap; }
+kbd, .keys dt { border: 1px solid #555; border-radius: 4px; background: #333; color: #ddd; font: 400 11px/1.5 var(--sans); padding: 2px 6px; flex: none; white-space: nowrap; }
 .primary kbd { background: #d0d0d0; border-color: #aaa; color: #222; }
 .keys { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 18px; align-items: baseline; font-size: 13px; }
 .keys dt { justify-self: start; }

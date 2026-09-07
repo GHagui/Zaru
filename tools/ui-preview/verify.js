@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-exports.verify = async function verify({ browser, stub, root, out }) {
+exports.verify = async function verify({ browser, stub, site, root, out }) {
   const errors = [];
   const checked = [];
   const watch = page => {
@@ -16,7 +16,7 @@ exports.verify = async function verify({ browser, stub, root, out }) {
     const page = await browser.newPage({ viewport });
     watch(page);
     await page.addInitScript(stub);
-    await page.goto(`file://${path.join(root, "ui/index.html")}`);
+    await page.goto(site.url);
     await page.waitForFunction(() => document.querySelectorAll(".keyrow").length > 20);
     await page.evaluate(() => document.fonts.ready);
     return page;

@@ -103,7 +103,8 @@ fn there_is_one_collection_per_bound_key() {
     // A collection with no key is a collection the keyboard cannot reach, so
     // the key map is what caps this and not a number chosen in the code.
     let over = session.new_collection("demais", limit()).unwrap_err();
-    assert!(over.contains("tecla mapeada"), "{over}");
+    assert_eq!(over.key, "collection.limit");
+    assert_eq!(over.params.get("limit").map(String::as_str), Some(limit().to_string().as_str()));
     assert_eq!(session.collections().len(), limit());
 
     // A smaller map is a smaller cap.
@@ -212,7 +213,11 @@ fn a_destination_that_is_already_taken_blocks_the_run() {
 
     let plan = session.plan(STYLE);
     assert_eq!(plan.blockers.len(), 1);
-    assert!(plan.blockers[0].contains("IMG_4820.CR3"), "{:?}", plan.blockers);
+    assert_eq!(plan.blockers[0].key, "apply.blocker.exists");
+    assert!(
+        plan.blockers[0].params["path"].contains("IMG_4820.CR3"),
+        "{:?}", plan.blockers
+    );
 
     // Refusing to start is the point: nothing is written and nothing is moved.
     let report = session.apply(STYLE);
@@ -237,7 +242,7 @@ fn a_file_standing_where_the_folder_must_go_blocks_the_run() {
 
     let plan = session.plan(STYLE);
     assert!(
-        plan.blockers.iter().any(|b| b.contains("não é uma pasta")),
+        plan.blockers.iter().any(|b| b.key == "apply.blocker.notAFolder"),
         "{:?}",
         plan.blockers
     );
@@ -383,7 +388,7 @@ fn a_sidecar_that_does_not_exist_yet_still_counts_and_still_collides() {
 
     let plan = session.plan(STYLE);
     assert!(
-        plan.blockers.iter().any(|b| b.contains("IMG_4820.xmp")),
+        plan.blockers.iter().any(|b| b.params.get("path").is_some_and(|p| p.contains("IMG_4820.xmp"))),
         "{:?}",
         plan.blockers
     );

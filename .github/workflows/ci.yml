@@ -28,7 +28,14 @@ jobs:
         run: cargo clippy --workspace --exclude zaru --all-targets -- -D warnings
 
       - name: Sintaxe do front-end
-        run: node --check ui/app.js && node --check tools/ui-preview/preview.js
+        run: |
+          for file in ui/*.js tools/ui-preview/*.js tools/locales/*.js; do node --check "$file"; done
+
+      # A missing key shows the key on screen and a dropped placeholder leaves a
+      # hole where a filename should be. Both are easy to do by hand in a pull
+      # request and invisible until somebody reaches that screen.
+      - name: Traduções alinhadas
+        run: node tools/locales/check.js
 
   # The app itself is cross-compiled rather than built on Windows: it links
   # against WebView2, not against a system webview, so mingw is enough and the

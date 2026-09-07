@@ -42,13 +42,13 @@ pub fn probe(path: impl AsRef<Path>) -> Result<VideoInfo> {
     let moov = top
         .iter()
         .find(|b| b.is(b"moov"))
-        .ok_or(Error::Malformed("sem box moov"))?;
+        .ok_or(Error::Malformed("no moov box"))?;
     let inside = bmff::children(&mut r, moov.body, moov.end)?;
 
     let movie = inside
         .iter()
         .find(|b| b.is(b"mvhd"))
-        .ok_or(Error::Malformed("sem box mvhd"))?;
+        .ok_or(Error::Malformed("no mvhd box"))?;
     let (duration_ms, captured_ms) = movie_header(&mut r, movie)?;
     let (width, height, rotation) = video_track(&mut r, &inside)?;
 
@@ -65,7 +65,7 @@ fn movie_header<R: std::io::Read + std::io::Seek>(
     movie: &BoxHeader,
 ) -> Result<(u64, Option<i64>)> {
     let p = read_at(r, movie.body, 32.min((movie.end - movie.body) as usize))?;
-    let version = *p.first().ok_or(Error::Malformed("mvhd vazio"))?;
+    let version = *p.first().ok_or(Error::Malformed("empty mvhd"))?;
 
     let (created, timescale, duration) = if version == 0 {
         (
@@ -105,7 +105,7 @@ fn video_track<R: std::io::Read + std::io::Seek>(
         };
 
         let p = read_at(r, header.body, 92.min((header.end - header.body) as usize))?;
-        let version = *p.first().ok_or(Error::Malformed("tkhd vazio"))?;
+        let version = *p.first().ok_or(Error::Malformed("empty tkhd"))?;
         // Past the version, flags, the two times, the track id and a reserved
         // word: 32 bits each in version 0 and 64 for the times in version 1.
         let after_times = if version == 0 { 4 + 8 + 4 + 4 } else { 4 + 16 + 4 + 4 };
@@ -136,7 +136,7 @@ fn video_track<R: std::io::Read + std::io::Seek>(
             (height, width, rotation)
         });
     }
-    Err(Error::Malformed("nenhuma trilha de vídeo"))
+    Err(Error::Malformed("no video track"))
 }
 
 /// True for the extensions Zaru treats as video.

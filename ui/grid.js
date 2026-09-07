@@ -18,13 +18,13 @@
     document.querySelector('[data-command="photo"]').setAttribute("aria-pressed", String(!active));
     document.querySelector('[data-command="grid"]').setAttribute("aria-pressed", String(active));
     if (!active) return;
-    el("selection-count").textContent = `${selected.size} selecionada${selected.size === 1 ? "" : "s"}`;
-    el("grid-total").textContent = `${state.visible.length} fotos no filtro`;
+    el("selection-count").textContent = tc("count.selected", selected.size);
+    el("grid-total").textContent = tc("count.inFilter", state.visible.length);
     const indices = [...selected];
     const mark = indices.length ? state.marks[indices[0]] : null;
     const mixed = indices.some(i => state.marks[i].rating !== mark.rating || state.marks[i].label !== mark.label || state.assigned[i] !== state.assigned[indices[0]]);
-    dom.name.textContent = selected.size ? `${selected.size} fotos selecionadas` : "Selecione fotos para editar em lote";
-    dom.burst.textContent = mixed ? "Valores variados" : "As ações abaixo valem para a seleção";
+    dom.name.textContent = selected.size ? tc("count.selected", selected.size) : t("grid.selectPrompt");
+    dom.burst.textContent = mixed ? t("grid.mixed") : t("grid.batchHint");
     dom.rating.querySelectorAll("button").forEach((button, i) => {
       const same = !!indices.length && indices.every(index => state.marks[index].rating === i + 1);
       button.classList.toggle("on", !!indices.length && indices.every(index => state.marks[index].rating > i));
@@ -32,11 +32,11 @@
     });
     dom.label.setAttribute("aria-pressed", String(!!indices.length && indices.every(i => state.marks[i].label === "Green")));
     dom.reject.setAttribute("aria-pressed", String(!!indices.length && indices.every(i => state.marks[i].rating === -1)));
-    dom.reject.textContent = "Rejeitar";
+    dom.reject.textContent = t("mark.reject");
     dom.collection.hidden = true;
     document.querySelectorAll("[data-photo], [data-selection]").forEach(b => b.disabled = !selected.size || state.busy);
     document.querySelectorAll("#sidebar-list [data-collection]").forEach(b => b.setAttribute("aria-pressed", String(!!indices.length && indices.every(i => state.assigned[i] === Number(b.dataset.collection)))));
-    document.querySelector(".sidebar-tip").textContent = "Na grade, clique atribui todas as selecionadas.";
+    document.querySelector(".sidebar-tip").textContent = t("collections.tipGrid");
     for (const [index, card] of cards) updateCard(index, card);
   }
 
@@ -45,7 +45,7 @@
     card.setAttribute("aria-selected", String(chosen));
     card.tabIndex = index === focused ? 0 : -1;
     card.querySelector(".selection-tick").textContent = chosen ? "✓" : "";
-    card.querySelector(".grid-marks").textContent = `${mark.rating === -1 ? "Rejeitada" : mark.rating > 0 ? "★".repeat(mark.rating) : "Sem nota"}${mark.label ? " · Verde" : ""}`;
+    card.querySelector(".grid-marks").textContent = `${mark.rating === -1 ? "Rejeitada" : mark.rating > 0 ? "★".repeat(mark.rating) : t("grid.unrated")}${mark.label ? " · Verde" : ""}`;
     // Sequential file names say nothing about when; the clock is what separates
     // one burst from the next at a glance.
     const when = card.querySelector(".grid-when");
@@ -54,7 +54,7 @@
     if (length) length.textContent = window.zaruTime?.duration(state.photos[index].durationMs) ?? "";
     const collection = state.assigned[index];
     const chip = card.querySelector(".grid-collection");
-    chip.textContent = collection == null ? "Sem coleção" : state.collections[collection];
+    chip.textContent = collection == null ? t("grid.noCollection") : state.collections[collection];
     chip.style.setProperty("--chip", collection == null ? "var(--muted)" : chipColour(state.collections[collection]));
     card.querySelector(".pending-dot").textContent = state.pendingXmp[index] || collection != null ? "●" : "";
   }
@@ -97,7 +97,7 @@
           card.setAttribute("aria-label", state.photos[index].name);
           card.innerHTML = '<span class="selection-tick" aria-hidden="true"></span><div class="grid-image"></div><div class="grid-caption"><span class="grid-name"></span><span class="grid-marks"></span><span class="grid-when"></span><span class="grid-duration"></span><span class="grid-collection"></span></div>';
           const name = card.querySelector(".grid-name");
-          const dot = document.createElement("span"); dot.className = "pending-dot"; dot.title = "Alterações pendentes";
+          const dot = document.createElement("span"); dot.className = "pending-dot"; dot.title = t("grid.pending");
           name.textContent = state.photos[index].name; name.append(dot);
           card.title = state.photos[index].name;
           card.addEventListener("click", event => {
@@ -143,7 +143,7 @@
       task.card.querySelector(".grid-image").replaceChildren(canvas);
     } catch {
       if (task.generation === generation && cards.get(task.index) === task.card) {
-        const error = document.createElement("span"); error.className = "thumbnail-error"; error.textContent = "Prévia indisponível · Enter abre a foto";
+        const error = document.createElement("span"); error.className = "thumbnail-error"; error.textContent = t("grid.noPreview");
         task.card.querySelector(".grid-image").replaceChildren(error);
       }
     } finally { image.removeAttribute("src"); }
@@ -156,13 +156,13 @@
     video.src = convertFileSrc(`media/${task.index}`, "zaru");
 
     await new Promise((resolve, reject) => {
-      video.onerror = () => reject(new Error("o WebView não decodificou este vídeo"));
+      video.onerror = () => reject(new Error("the WebView could not decode this video"));
       video.onloadedmetadata = () => {
         // Half a second in: the very first frame of a clip is often a fade.
         video.currentTime = Math.min(0.5, (video.duration || 1) / 2);
       };
       video.onseeked = resolve;
-      setTimeout(() => reject(new Error("tempo esgotado")), 15000);
+      setTimeout(() => reject(new Error("timed out")), 15000);
     });
     if (task.generation !== generation || cards.get(task.index) !== task.card) return;
 
@@ -217,7 +217,7 @@
     } else {
       invalidate();
       invoke("thumbnail_focus", { frames: [] }).catch(reportError);
-      document.querySelector(".sidebar-tip").textContent = "Alt + clique atribui a rajada inteira.";
+      document.querySelector(".sidebar-tip").textContent = t("collections.tipPhoto");
       show(); fillRing(); dom.stage.focus();
     }
     renderStatus();

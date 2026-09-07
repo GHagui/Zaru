@@ -307,7 +307,7 @@ fn shrink(jpeg: &[u8]) -> Result<Vec<u8>, String> {
     let colour = match decoder.info().map(|i| i.pixel_format) {
         Some(jpeg_decoder::PixelFormat::L8) => jpeg_encoder::ColorType::Luma,
         Some(jpeg_decoder::PixelFormat::RGB24) => jpeg_encoder::ColorType::Rgb,
-        other => return Err(format!("formato de pixel não suportado: {other:?}")),
+        other => return Err(format!("unsupported pixel format: {other:?}")),
     };
 
     let mut out = Vec::with_capacity(32 * 1024);

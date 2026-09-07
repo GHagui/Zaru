@@ -1,4 +1,5 @@
 use super::*;
+use crate::i18n::Message;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -9,20 +10,20 @@ pub enum ApplyOperation { Xmp, Organization, #[default] Both }
 pub enum BatchEdit { Rating(i8), Green(bool), Collection(Option<usize>) }
 
 impl Session {
-    fn selected_indices(&self, indices: Option<&[usize]>) -> Result<Vec<usize>, String> {
+    fn selected_indices(&self, indices: Option<&[usize]>) -> Result<Vec<usize>, Message> {
         let indices: BTreeSet<usize> = match indices {
             Some(indices) => indices.iter().copied().collect(),
             None => (0..self.photos.len()).collect(),
         };
-        if indices.iter().any(|i| *i >= self.photos.len()) { return Err("seleção contém uma foto inválida".into()); }
+        if indices.iter().any(|i| *i >= self.photos.len()) { return Err(Message::new("selection.invalidPhoto")); }
         Ok(indices.into_iter().collect())
     }
 
-    pub fn edit_selection(&mut self, indices: &[usize], edit: BatchEdit) -> Result<Vec<PhotoChange>, String> {
+    pub fn edit_selection(&mut self, indices: &[usize], edit: BatchEdit) -> Result<Vec<PhotoChange>, Message> {
         let indices = self.selected_indices(Some(indices))?;
         match &edit {
-            BatchEdit::Rating(rating) if !(-1..=5).contains(rating) => return Err("nota inválida".into()),
-            BatchEdit::Collection(Some(c)) if *c >= self.collections.len() => return Err("coleção inválida".into()),
+            BatchEdit::Rating(rating) if !(-1..=5).contains(rating) => return Err(Message::new("selection.invalidRating")),
+            BatchEdit::Collection(Some(c)) if *c >= self.collections.len() => return Err(Message::new("selection.invalidCollection")),
             _ => {}
         }
         let mut marks = Vec::new();
@@ -65,7 +66,7 @@ impl Session {
         files.into_iter().collect()
     }
 
-    pub fn plan_selection(&self, indices: Option<&[usize]>, operation: ApplyOperation, styles: &[SidecarStyle]) -> Result<ApplyPlan, String> {
+    pub fn plan_selection(&self, indices: Option<&[usize]>, operation: ApplyOperation, styles: &[SidecarStyle]) -> Result<ApplyPlan, Message> {
         let indices = self.selected_indices(indices)?;
         let mut plan = ApplyPlan::default();
         let mut per_collection = vec![(0, 0); self.collections.len()];
@@ -80,10 +81,10 @@ impl Session {
             plan.rejected += usize::from(self.marks[i].is_rejected());
             let Some(c) = collection else { continue };
             let target = self.folder.join(&self.collections[c]);
-            if target.exists() && !target.is_dir() { plan.blockers.push(format!("{} já existe e não é uma pasta", self.collections[c])); }
+            if target.exists() && !target.is_dir() { plan.blockers.push(Message::new("apply.blocker.notAFolder").with("name", &self.collections[c])); }
             // Reject a collection symlink leading outside this working folder.
             if target.exists() && !target.canonicalize().map(|p| p.starts_with(self.folder.canonicalize().unwrap_or_default())).unwrap_or(false) {
-                plan.blockers.push(format!("{} está fora da pasta de trabalho", self.collections[c]));
+                plan.blockers.push(Message::new("apply.blocker.outsideFolder").with("name", &self.collections[c]));
             }
             let files = self.move_files(i, write, styles, &mut indexes);
             per_collection[c].0 += 1;
@@ -92,7 +93,7 @@ impl Session {
                 if source == destination { continue; }
                 per_collection[c].1 += 1;
                 if destination.exists() || !claimed.insert(destination.clone()) {
-                    plan.blockers.push(format!("{} já existe", destination.display()));
+                    plan.blockers.push(Message::new("apply.blocker.exists").with("path", destination.display()));
                 }
             }
         }
@@ -102,11 +103,13 @@ impl Session {
         Ok(plan)
     }
 
-    pub fn apply_selection(&mut self, indices: Option<&[usize]>, operation: ApplyOperation, styles: &[SidecarStyle]) -> Result<ApplyReport, String> {
+    pub fn apply_selection(&mut self, indices: Option<&[usize]>, operation: ApplyOperation, styles: &[SidecarStyle]) -> Result<ApplyReport, Message> {
         let chosen = self.selected_indices(indices)?;
         let plan = self.plan_selection(Some(&chosen), operation, styles)?;
         let mut report = ApplyReport { rejected: plan.rejected, untouched: plan.untouched, ..Default::default() };
-        if !plan.blockers.is_empty() { report.error = Some(plan.blockers.join("; ")); return Ok(report); }
+        // The blockers are already a list the front end can render one per line;
+        // joining them into a sentence here would take that apart.
+        if !plan.blockers.is_empty() { report.error = Some(Message::new("apply.blocked")); return Ok(report); }
         let mut indexes = HashMap::new();
         for i in chosen {
             let files = if operation != ApplyOperation::Xmp && self.assigned[i].is_some() {
@@ -115,7 +118,7 @@ impl Session {
             if operation != ApplyOperation::Organization && self.marks[i] != self.saved_marks[i] {
                 for style in styles {
                     if let Err(error) = zaru_xmp::apply(&self.photos[i].path, &self.marks[i], *style) {
-                        report.error = Some(format!("{}: {error}", self.photos[i].name));
+                        report.error = Some(Message::new("apply.sidecarFailed").with("name", &self.photos[i].name).with("reason", error));
                         report.failed_photo = Some(i);
                         self.prune_applied(&report);
                         return Ok(report);
@@ -148,8 +151,19 @@ impl Session {
                         if *source == self.photos[i].path { self.photos[i].path = destination.clone(); }
                     }
                 }
-                report.error = Some(format!("{}: {error}{}", self.photos[i].name,
-                    if rollback_errors.is_empty() { String::new() } else { format!("; reversão incompleta: {}", rollback_errors.join("; ")) }));
+                // Two keys rather than one with an optional tail: a sentence
+                // stitched together here could not be reordered by whoever
+                // translates it.
+                report.error = Some(if rollback_errors.is_empty() {
+                    Message::new("apply.moveFailed")
+                        .with("name", &self.photos[i].name)
+                        .with("reason", &error)
+                } else {
+                    Message::new("apply.moveFailedRollback")
+                        .with("name", &self.photos[i].name)
+                        .with("reason", &error)
+                        .with("rollback", rollback_errors.join("; "))
+                });
                 report.failed_photo = Some(i); break;
             }
             self.photos[i].path = target.join(&self.photos[i].name);

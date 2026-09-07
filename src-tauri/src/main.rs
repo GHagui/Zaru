@@ -17,7 +17,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use zaru_core::keymap::ACTIONS;
 use zaru_core::{
-    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, ThumbSource, Thumbs, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    ApplyOperation, BatchEdit, ApplyPlan, Exif, Frame, Keymap, Message, ThumbSource, Thumbs, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
     SessionView, Settings,
 };
 
@@ -59,7 +59,7 @@ async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, String> {
+fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, Message> {
     let mut session = state.session.lock().unwrap();
     if let Err(error) = session.open(Path::new(&path)) {
         let recovered = Recovery::load(&state.config_dir, Path::new(&path))
@@ -133,7 +133,7 @@ fn cache_thumbnail(state: State<'_, AppState>, index: usize, bytes: Vec<u8>) {
 }
 
 #[tauri::command]
-fn edit_selection(state: State<'_, AppState>, indices: Vec<usize>, edit: BatchEdit) -> Result<Vec<PhotoChange>, String> {
+fn edit_selection(state: State<'_, AppState>, indices: Vec<usize>, edit: BatchEdit) -> Result<Vec<PhotoChange>, Message> {
     let changes = state.session.lock().unwrap().edit_selection(&indices, edit)?;
     Ok(touched(&state, changes))
 }
@@ -183,19 +183,19 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
 }
 
 #[tauri::command]
-fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
+fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settings, Message> {
     let mut current = state.settings.lock().unwrap();
     *current = settings.clone();
     settings
         .save(&state.config_dir)
-        .map_err(|e| format!("could not save settings: {e}"))?;
+        .map_err(|e| Message::new("settings.saveFailed").with("reason", e))?;
     Ok(settings)
 }
 
 /// Registers a collection. Nothing is created on disk until Apply, so a session
 /// the user walks away from leaves no empty folders behind.
 #[tauri::command]
-fn new_collection(state: State<'_, AppState>, name: String) -> Result<Vec<String>, String> {
+fn new_collection(state: State<'_, AppState>, name: String) -> Result<Vec<String>, Message> {
     // The key map is the cap: a collection no key reaches is not worth having.
     let limit = state.settings.lock().unwrap().keymap.collections.len();
     let mut session = state.session.lock().unwrap();
@@ -233,34 +233,119 @@ fn exif(state: State<'_, AppState>, index: usize) -> Option<Exif> {
     state.session.lock().unwrap().exif(index)
 }
 
-/// Every rebindable action, with the label the settings screen shows.
+/// Every language the app can show, and the strings for any the user supplied.
+///
+/// A translation dropped into the app's `locales` folder is offered next to the
+/// bundled ones, so somebody translating Zaru sees their work by restarting the
+/// app — no Rust, no Node, no build.
 #[tauri::command]
-fn key_actions() -> Vec<(String, String)> {
-    ACTIONS
-        .iter()
-        .map(|(id, label)| ((*id).to_string(), (*label).to_string()))
-        .collect()
+fn languages(state: State<'_, AppState>) -> LanguageList {
+    let folder = state.config_dir.join("locales");
+    let mut extra: std::collections::BTreeMap<String, serde_json::Value> = Default::default();
+
+    if let Ok(entries) = std::fs::read_dir(&folder) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().map(|e| e != "json").unwrap_or(true) {
+                continue;
+            }
+            let Some(tag) = path.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
+                continue;
+            };
+            // A locale that will not parse is skipped rather than crashing the
+            // start-up of somebody who is halfway through editing it.
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if let Ok(value) = serde_json::from_str(&text) {
+                    extra.insert(tag, value);
+                }
+            }
+        }
+    }
+
+    LanguageList {
+        bundled: zaru_core::i18n::BUNDLED
+            .iter()
+            .map(|(tag, name)| Language { tag: (*tag).into(), name: (*name).into() })
+            .collect(),
+        extra,
+        folder: folder.display().to_string(),
+        system: system_language(),
+        chosen: state.settings.lock().unwrap().language.clone(),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Language {
+    tag: String,
+    name: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguageList {
+    bundled: Vec<Language>,
+    /// Locale files found in the user's folder, already parsed.
+    extra: std::collections::BTreeMap<String, serde_json::Value>,
+    folder: String,
+    /// What the operating system asks for, before any override.
+    system: Option<String>,
+    /// The language the user pinned, if they pinned one.
+    chosen: Option<String>,
+}
+
+/// What language the machine is set to.
+fn system_language() -> Option<String> {
+    for name in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(value) = std::env::var(name) {
+            let tag = value.split('.').next().unwrap_or_default().replace('_', "-");
+            if !tag.is_empty() && tag != "C" && tag != "POSIX" {
+                return Some(tag);
+            }
+        }
+    }
+    // On Windows the environment usually says nothing, and the locale comes
+    // from the system itself.
+    sys_locale::get_locale()
+}
+
+#[tauri::command]
+fn set_language(state: State<'_, AppState>, language: Option<String>) -> Result<(), Message> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.language = language;
+    settings
+        .save(&state.config_dir)
+        .map_err(|e| Message::new("settings.saveFailed").with("reason", e))
+}
+
+/// Every rebindable action, by name.
+///
+/// What each one is called on screen comes from the locale file, under
+/// `keymapAction.<id>` — the same place every other label comes from.
+#[tauri::command]
+fn key_actions() -> Vec<String> {
+    ACTIONS.iter().map(|id| (*id).to_string()).collect()
 }
 
 /// Moves one action onto one key, refusing anything that would leave two
 /// actions sharing it.
 #[tauri::command]
-fn bind_key(state: State<'_, AppState>, action: String, key: String) -> Result<Keymap, String> {
+fn bind_key(state: State<'_, AppState>, action: String, key: String) -> Result<Keymap, Message> {
     let mut settings = state.settings.lock().unwrap();
     settings.keymap.set(&action, &key)?;
     settings
         .save(&state.config_dir)
-        .map_err(|e| format!("não deu para salvar: {e}"))?;
+        .map_err(|e| Message::new("settings.saveFailed").with("reason", e))?;
     Ok(settings.keymap.clone())
 }
 
 #[tauri::command]
-fn reset_keymap(state: State<'_, AppState>) -> Result<Keymap, String> {
+fn reset_keymap(state: State<'_, AppState>) -> Result<Keymap, Message> {
     let mut settings = state.settings.lock().unwrap();
     settings.keymap = Keymap::default();
     settings
         .save(&state.config_dir)
-        .map_err(|e| format!("não deu para salvar: {e}"))?;
+        .map_err(|e| Message::new("settings.saveFailed").with("reason", e))?;
     Ok(settings.keymap.clone())
 }
 
@@ -312,13 +397,13 @@ fn checkpoint(state: State<'_, AppState>) {
 /// What Apply would do. The preview is not decoration: moving files is the only
 /// irreversible thing Zaru does, and it should never be a surprise.
 #[tauri::command]
-fn plan(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Option<ApplyOperation>) -> Result<ApplyPlan, String> {
+fn plan(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Option<ApplyOperation>) -> Result<ApplyPlan, Message> {
     let styles = state.settings.lock().unwrap().xmp_compat.styles();
     state.session.lock().unwrap().plan_selection(indices.as_deref(), operation.unwrap_or_default(), styles)
 }
 
 #[tauri::command]
-fn apply(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Option<ApplyOperation>) -> Result<serde_json::Value, String> {
+fn apply(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Option<ApplyOperation>) -> Result<serde_json::Value, Message> {
     let styles = state.settings.lock().unwrap().xmp_compat.styles();
     let mut session = state.session.lock().unwrap();
     let report = session.apply_selection(indices.as_deref(), operation.unwrap_or_default(), styles)?;
@@ -332,8 +417,8 @@ fn apply(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Opt
     } else if session.snapshot().save(&state.config_dir).is_err() {
         state.dirty.store(true, Ordering::Relaxed);
     }
-    let mut value = serde_json::to_value(report).map_err(|e| e.to_string())?;
-    value["session"] = serde_json::to_value(session.view()).map_err(|e| e.to_string())?;
+    let mut value = serde_json::to_value(report).map_err(|e| Message::new("internal.serialise").with("reason", e))?;
+    value["session"] = serde_json::to_value(session.view()).map_err(|e| Message::new("internal.serialise").with("reason", e))?;
     Ok(value)
 }
 
@@ -399,6 +484,8 @@ fn main() {
             set_settings,
             exif,
             key_actions,
+            languages,
+            set_language,
             bind_key,
             reset_keymap,
             new_collection,

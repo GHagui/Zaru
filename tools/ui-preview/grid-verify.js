@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-exports.verify = async ({ browser, stub, root, out }) => {
+exports.verify = async ({ browser, stub, site, root, out }) => {
   let checks = 0;
   const errors = [];
   const check = (condition, label) => { assert.ok(condition, label); checks++; };
@@ -11,7 +11,7 @@ exports.verify = async ({ browser, stub, root, out }) => {
     page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
     // Repeat metadata to exercise virtualization, not 5,000 disk files.
     await page.addInitScript(stub.replace("length: 1240", "length: 5000"));
-    await page.goto(`file://${path.join(root,"ui/index.html")}`);
+    await page.goto(site.url);
     await page.waitForSelector('.keyrow[data-action="grid"]', { state: "attached" });
     await page.click("#open");
     await page.waitForFunction(() => document.body.getAttribute("aria-busy") === "false");

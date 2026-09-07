@@ -16,43 +16,46 @@ const ILLEGAL: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
 
 const MAX_LEN: usize = 64;
 
+use crate::i18n::Message;
+
 /// Checks a name typed into the new-collection field and returns it trimmed.
 ///
 /// Rejecting here, before anything is created, is what keeps the Apply step
-/// from failing halfway through with files already moved.
-pub fn validate(name: &str, existing: &[String]) -> Result<String, String> {
+/// from failing halfway through with files already moved. Every refusal is
+/// named rather than written, so the reason reaches the user in their language.
+pub fn validate(name: &str, existing: &[String]) -> Result<String, Message> {
     let name = name.trim();
 
     if name.is_empty() {
-        return Err("o nome não pode ser vazio".into());
+        return Err(Message::new("collection.name.empty"));
     }
     if name.chars().count() > MAX_LEN {
-        return Err(format!("o nome passa de {MAX_LEN} caracteres"));
+        return Err(Message::new("collection.name.tooLong").with("max", MAX_LEN));
     }
     if let Some(c) = name.chars().find(|c| ILLEGAL.contains(c)) {
-        return Err(format!("o nome não pode conter {c}"));
+        return Err(Message::new("collection.name.illegalChar").with("char", c));
     }
     if name.chars().any(|c| (c as u32) < 0x20) {
-        return Err("o nome não pode conter caracteres de controle".into());
+        return Err(Message::new("collection.name.controlChar"));
     }
     if name == "." || name == ".." {
-        return Err("esse nome é do próprio sistema de arquivos".into());
+        return Err(Message::new("collection.name.filesystem"));
     }
     // Windows silently drops a trailing dot, so the folder would not have the
     // name the user typed.
     if name.ends_with('.') {
-        return Err("o nome não pode terminar em ponto".into());
+        return Err(Message::new("collection.name.trailingDot"));
     }
 
     let stem = name.split('.').next().unwrap_or(name);
     if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(stem)) {
-        return Err(format!("{name} é um nome reservado pelo Windows"));
+        return Err(Message::new("collection.name.reserved").with("name", name));
     }
 
     // Windows compares filenames without case, so two collections differing
     // only in case would land in the same folder.
     if existing.iter().any(|e| e.eq_ignore_ascii_case(name)) {
-        return Err(format!("já existe uma coleção chamada {name}"));
+        return Err(Message::new("collection.name.exists").with("name", name));
     }
 
     Ok(name.to_string())

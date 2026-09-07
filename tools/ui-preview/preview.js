@@ -11,6 +11,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { serve } = require("./serve");
 
 const ROOT = path.resolve(__dirname, "../..");
 const UI = path.join(ROOT, "ui");
@@ -31,9 +32,9 @@ function chromium() {
 
 /// One frame stands in for the whole folder: the real preview extracted from
 /// the fixture, or a flat grey if it has not been produced yet.
-function frame() {
+function frame(base = "") {
   const extracted = path.join(OUT, "frame.jpg");
-  if (fs.existsSync(extracted)) return `file://${extracted}`;
+  if (fs.existsSync(extracted)) return `${base}/frame.jpg`;
   return (
     "data:image/svg+xml;base64," +
     Buffer.from(
@@ -143,7 +144,15 @@ const commands = {
     width: 6000,
     height: 4000,
   }),
-  key_actions: () => ACTION_LABELS,
+  key_actions: () => ACTION_LABELS.map(([id]) => id),
+  languages: () => ({
+    bundled: [
+      { tag: "en", name: "English" }, { tag: "zh-Hans", name: "简体中文" },
+      { tag: "pt-BR", name: "Português (Brasil)" }, { tag: "ja", name: "日本語" },
+    ],
+    extra: {}, folder: "/tmp/zaru/locales", system: "pt-BR", chosen: null,
+  }),
+  set_language: () => {},
   bind_key: ({ action, key }) => {
     const flat = [
       ...ACTION_LABELS.map(([id]) => [id, settings.keymap[id]]),
@@ -224,10 +233,12 @@ window.__preview = { commands, calls: [], photos, marks, collections, assigned }
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
+  const site = await serve(UI, { "/frame.jpg": path.join(OUT, "frame.jpg") });
   const browser = await chromium().launch();
   if (process.argv.includes("--grid-only")) {
-    await require("./grid-verify").verify({ browser, stub: stub(frame()), root: ROOT, out: OUT });
-    await browser.close(); return;
+    await require("./grid-verify").verify({ browser, stub: stub(frame(site.url)), site, root: ROOT, out: OUT });
+    await browser.close();
+  await site.close(); return;
   }
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 
@@ -235,8 +246,8 @@ window.__preview = { commands, calls: [], photos, marks, collections, assigned }
   page.on("pageerror", (e) => problems.push(String(e)));
   page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
 
-  await page.addInitScript(stub(frame()));
-  await page.goto(`file://${path.join(UI, "index.html")}`);
+  await page.addInitScript(stub(frame(site.url)));
+  await page.goto(site.url);
   await page.waitForTimeout(400);
 
   const shot = async (name) => {
@@ -345,9 +356,10 @@ window.__preview = { commands, calls: [], photos, marks, collections, assigned }
   await page.waitForSelector("#report:not([hidden])");
   await shot("report");
 
-  await require("./verify").verify({ browser, stub: stub(frame()), root: ROOT, out: OUT });
-  await require("./grid-verify").verify({ browser, stub: stub(frame()), root: ROOT, out: OUT });
+  await require("./verify").verify({ browser, stub: stub(frame(site.url)), site, root: ROOT, out: OUT });
+  await require("./grid-verify").verify({ browser, stub: stub(frame(site.url)), site, root: ROOT, out: OUT });
   console.log(problems.length ? `\nproblems:\n  ${problems.join("\n  ")}` : "\nno console errors");
   await browser.close();
+  await site.close();
   process.exitCode = problems.length ? 1 : 0;
 })().catch(error => { console.error(error); process.exit(1); });

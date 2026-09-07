@@ -14,6 +14,8 @@ tauri = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Windows reports its language through the system, not the environment.
+sys-locale = "0.3"
 zaru-core = { path = "../crates/zaru-core" }
 
 [[bin]]

@@ -1,5 +1,7 @@
 "use strict";
 
+// `t`, `tc` and `tm` are published by ui/i18n.js, which loads first.
+
 // The navigation loop lives entirely on this side. A keypress must not wait on
 // the command channel, on disk, or on a JPEG decoder: by the time the user
 // presses H, the next photo is already decoded and sitting in the DOM, and the
@@ -81,13 +83,13 @@ const dom = {
 /// What a filter lets through. Order is the order of the digits in the picker.
 const FILTERS = [
   { name: "tudo", keep: () => true },
-  { name: "sem marcação", keep: (m, c) => m.rating === 0 && !m.label && c === null },
-  { name: "com nota", keep: (m) => m.rating > 0 },
-  { name: "5 estrelas", keep: (m) => m.rating === 5 },
+  { name: t("filter.unmarked"), keep: (m, c) => m.rating === 0 && !m.label && c === null },
+  { name: t("filter.rated"), keep: (m) => m.rating > 0 },
+  { name: t("filter.fiveStars"), keep: (m) => m.rating === 5 },
   { name: "verde", keep: (m) => !!m.label },
   { name: "rejeitadas", keep: (m) => m.rating === -1 },
-  { name: "em uma coleção", keep: (m, c) => c !== null },
-  { name: "sem coleção", keep: (m, c) => c === null },
+  { name: t("filter.inCollection"), keep: (m, c) => c !== null },
+  { name: t("filter.noCollection"), keep: (m, c) => c === null },
 ];
 
 const state = {
@@ -336,9 +338,11 @@ function renderStatus() {
   document.body.classList.toggle("no-results", !!state.photos.length && !hasPhoto);
   el("no-results").hidden = !state.photos.length || hasPhoto;
   dom.counter.textContent = `${hasPhoto ? state.at + 1 : 0} / ${state.visible.length}`;
-  dom.name.textContent = photo?.name ?? (state.photos.length ? "Nenhuma foto selecionada" : "Pronto para uma nova seleção");
+  dom.name.textContent = photo?.name ?? (state.photos.length ? t("apply.scopeNone") : t("footer.idle"));
   dom.name.title = photo?.name ?? "";
-  dom.burst.textContent = photo?.burstSize > 1 ? `Rajada · ${photo.burstIndex + 1}/${photo.burstSize}` : "";
+  dom.burst.textContent = photo?.burstSize > 1
+    ? t("burst.position", { index: photo.burstIndex + 1, size: photo.burstSize })
+    : "";
   dom.filterChip.hidden = state.filter === 0;
   dom.filterChip.textContent = state.filter ? `${FILTERS[state.filter].name} · ${state.visible.length} de ${state.photos.length}` : "";
   const rejected = mark?.rating === -1;
@@ -348,7 +352,7 @@ function renderStatus() {
     cell.setAttribute("aria-pressed", String(stars === i + 1));
   });
   dom.reject.setAttribute("aria-pressed", String(rejected));
-  dom.reject.textContent = rejected ? "Rejeitada" : "Rejeitar";
+  dom.reject.textContent = rejected ? t("mark.rejected") : t("mark.reject");
   dom.label.setAttribute("aria-pressed", String(!!mark?.label));
   const collection = state.assigned[index];
   dom.collection.hidden = collection === null || collection === undefined;
@@ -359,14 +363,14 @@ function renderStatus() {
     dom.collection.style.setProperty("--chip", chipColour(name));
   }
   dom.zoom.textContent = hasPhoto && state.view.scale !== 1
-    ? `${Math.round(state.view.scale / geometry(photo, pane("current")).native * 100)}% · Ajustar`
-    : "Ajustar / 100%";
+    ? t("action.zoomAt", { percent: Math.round(state.view.scale / geometry(photo, pane("current")).native * 100) })
+    : t("action.zoom");
   const comparing = state.pinned !== null && hasPhoto;
   dom.divider.hidden = !comparing;
   dom.pinTag.hidden = !comparing;
   el("current-tag").hidden = !comparing;
-  dom.pinTag.textContent = comparing ? `Referência · ${state.photos[state.pinned].name}` : "";
-  el("current-tag").textContent = comparing ? `Atual · ${photo.name}` : "";
+  dom.pinTag.textContent = comparing ? t("compare.reference", { name: state.photos[state.pinned].name }) : "";
+  el("current-tag").textContent = comparing ? t("compare.current", { name: photo.name }) : "";
   document.querySelectorAll('[data-command="compare"]').forEach(b => b.setAttribute("aria-pressed", String(comparing)));
   document.querySelectorAll("[data-photo]").forEach(b => b.disabled = !hasPhoto || state.busy);
   // Zoom and side-by-side belong to stills. The guard already refuses the
@@ -671,13 +675,13 @@ async function openFolder(path) {
 
 async function pickFolder() {
   if (state.busy) return;
-  setBusy(true, "Abrindo pasta…");
+  setBusy(true, t("status.opening"));
   try {
     const path = await invoke("pick_folder");
     if (!path) return;
     await openFolder(path);
   } catch (e) {
-    notifyUser(`Não foi possível abrir a pasta: ${e}`, true);
+    notifyUser(tm(e), true);
   } finally {
     setBusy(false);
   }
@@ -723,7 +727,7 @@ function startFilter() {
     label.textContent = filter.name;
     if (i === state.filter) label.className = "chosen";
     const tally = document.createElement("b");
-    tally.textContent = count === 1 ? "1 foto" : `${count} fotos`;
+    tally.textContent = tc("count.photos", count);
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-pressed", String(i === state.filter));
@@ -776,7 +780,7 @@ function startMove() {
     const li = document.createElement("li");
     const p = document.createElement("span");
     p.className = "none";
-    p.textContent = "Nenhuma coleção ainda. Crie a primeira para organizar suas fotos.";
+    p.textContent = t("move.none");
     li.append(p);
     dom.moveList.append(li);
   } else {
@@ -797,7 +801,7 @@ function startMove() {
       label.append(chip);
 
       const count = document.createElement("b");
-      count.textContent = counts[c] === 1 ? "1 foto" : `${counts[c]} fotos`;
+      count.textContent = tc("count.photos", counts[c]);
       if (!counts[c]) count.textContent = "";
 
       const button = document.createElement("button");
@@ -862,7 +866,7 @@ async function applyMany(promise) {
 
 /// A collection key pressed before that collection exists.
 function flashCollectionHint(which) {
-  notifyUser(`A coleção ${which + 1} ainda não existe. Abra Coleções para criar uma.`);
+  notifyUser(t("collections.missing", { number: which + 1 }));
 }
 
 // ---------------------------------------------------------------- apply
@@ -885,26 +889,26 @@ function tallyRow(into, count, what, note) {
 /// irreversible thing in the app, and it should never be a surprise.
 async function openApply(operation = "both", indices = null) {
   if (state.busy || !state.photos.length) return;
-  setBusy(true, "Preparando revisão…");
+  setBusy(true, t("status.preparing"));
   let plan;
   state.applyRequest = { operation, indices: indices === null ? null : [...indices] };
   try { plan = await invoke("plan", state.applyRequest); } finally { setBusy(false); }
   state.plan = plan;
-  const scope = indices === null ? "Sessão inteira" : `${indices.length} fotos selecionadas`;
-  el("apply-scope").textContent = `${scope} · ${operation === "xmp" ? "Gravar notas e etiquetas, sem mover arquivos." : operation === "organization" ? "Mover CR3 e acompanhantes existentes. Marcações não gravadas continuam pendentes." : "Gravar XMP e aplicar organização."}`;
+  const scope = indices === null ? t("apply.scopeAll") : tc("apply.scopeSelected", indices.length);
+  el("apply-scope").textContent = `${scope} · ${operation === "xmp" ? t("apply.scopeXmp") : operation === "organization" ? t("apply.scopeOrganisation") : t("apply.scopeBoth")}`;
 
   dom.applyBody.replaceChildren();
-  tallyRow(dom.applyBody, plan.evaluated, "fotos avaliadas");
-  tallyRow(dom.applyBody, plan.sidecars, "vão receber .xmp");
+  tallyRow(dom.applyBody, plan.evaluated, t("tally.evaluated"));
+  tallyRow(dom.applyBody, plan.sidecars, t("tally.sidecars"));
   for (const move of plan.moves) {
     // The sidecar and the RAW+JPEG twin travel with the photo, so the file
     // count is usually higher than the photo count.
-    const note = move.files !== move.photos ? `(${move.files} arquivos)` : "";
-    tallyRow(dom.applyBody, move.photos, `vão para ${move.collection}/`, note);
+    const note = move.files !== move.photos ? tc("count.files", move.files) : "";
+    tallyRow(dom.applyBody, move.photos, t("tally.movingTo", { collection: move.collection }), note);
   }
   // Rejected is a note in the metadata and nothing more. Zaru never deletes.
-  tallyRow(dom.applyBody, plan.rejected, "rejeitadas — permanecem onde estão");
-  tallyRow(dom.applyBody, plan.untouched, "sem marcação, ficam como estão");
+  tallyRow(dom.applyBody, plan.rejected, t("tally.rejected"));
+  tallyRow(dom.applyBody, plan.untouched, t("tally.untouched"));
 
   const blocked = plan.blockers.length > 0;
   dom.applyBlockers.hidden = !blocked;
@@ -922,7 +926,7 @@ async function openApply(operation = "both", indices = null) {
 
 async function confirmApply() {
   if (state.busy || !state.plan || state.plan.blockers.length) return;
-  setBusy(true, "Aplicando alterações…");
+  setBusy(true, t("status.applying"));
   let report;
   try {
     report = await invoke("apply", state.applyRequest);
@@ -946,14 +950,14 @@ async function confirmApply() {
   window.gridUI?.filterChanged();
   show();
 
-  dom.reportTitle.textContent = report.error ? "Aplicação interrompida" : "Aplicado";
+  dom.reportTitle.textContent = report.error ? t("report.stopped") : t("report.done");
   dom.reportBody.replaceChildren();
   tallyRow(dom.reportBody, report.sidecars, ".xmp gravados");
   if (report.moved) {
-    tallyRow(dom.reportBody, report.moved, `fotos movidas (${report.filesMoved} arquivos)`);
+    tallyRow(dom.reportBody, report.moved, t("tally.moved", { files: tc("count.files", report.filesMoved) }));
   }
-  tallyRow(dom.reportBody, report.rejected, "rejeitadas — permanecem onde estão");
-  tallyRow(dom.reportBody, report.untouched, "sem marcação, ficam como estão");
+  tallyRow(dom.reportBody, report.rejected, t("tally.rejected"));
+  tallyRow(dom.reportBody, report.untouched, t("tally.untouched"));
 
   if (report.error) {
     const dd = document.createElement("dd");
@@ -970,18 +974,18 @@ async function offerRecovery() {
   const offer = await invoke("recovery_offer");
   if (!offer) return;
   dom.recoveryBody.replaceChildren();
-  tallyRow(dom.recoveryBody, offer.marked, "fotos marcadas");
-  if (offer.assigned) tallyRow(dom.recoveryBody, offer.assigned, "já em coleções");
-  if (offer.collections) tallyRow(dom.recoveryBody, offer.collections, "coleções criadas");
+  tallyRow(dom.recoveryBody, offer.marked, t("tally.marked"));
+  if (offer.assigned) tallyRow(dom.recoveryBody, offer.assigned, t("tally.assigned"));
+  if (offer.collections) tallyRow(dom.recoveryBody, offer.collections, t("tally.collections"));
   openModal("recovery");
 }
 
 async function restoreSession() {
   if (state.busy) return;
-  setBusy(true, "Restaurando sessão…");
+  setBusy(true, t("status.restoring"));
   try {
     const session = await invoke("restore_session");
-    if (!session) throw new Error("O rascunho não está mais disponível para esta pasta.");
+    if (!session) throw new Error(t("recovery.gone"));
     adopt(session);
     rebuildVisible(current());
     closeModal();
@@ -1104,12 +1108,12 @@ function adoptKeymap(keymap) {
 /// rather than named because a collection is created after the key exists.
 function actionLabel(action) {
   const collection = action.match(/^collection(\d+)$/);
-  if (collection) return `coleção ${collection[1]}`;
-  return state.actionLabels.get(action) ?? action;
+  if (collection) return t("settings.collectionKey", { number: collection[1] });
+  return t(`keymapAction.${action}`);
 }
 
 function showKey(key) {
-  if (key === " ") return "espaço";
+  if (key === " ") return t("key.space");
   return key;
 }
 
@@ -1145,7 +1149,7 @@ function startCapture(action) {
   for (const row of dom.keymapList.children) {
     if (row.dataset.action !== action) continue;
     row.classList.add("capturing");
-    row.querySelector("kbd").textContent = "aperte";
+    row.querySelector("kbd").textContent = t("settings.pressKey");
   }
 }
 
@@ -1166,12 +1170,83 @@ async function captureKey(key) {
   }
 }
 
+/// Fills the language menu and applies whichever language wins.
+///
+/// The system's choice is the default because nobody should have to configure
+/// their own language; the menu exists for the case the system is wrong, which
+/// is common for anyone whose Windows is in a language they do not prefer.
+async function loadLanguages() {
+  const list = await invoke("languages").catch(() => null);
+  if (!list) return;
+  state.extraLocales = list.extra ?? {};
+
+  const available = [
+    ...list.bundled.map((l) => l.tag),
+    ...Object.keys(state.extraLocales),
+  ];
+  const wanted = list.chosen ?? matchLanguage(list.system, available) ?? window.zaruI18n.FALLBACK;
+  await window.zaruI18n.useLanguage(wanted, state.extraLocales);
+
+  const menu = el("language");
+  menu.replaceChildren();
+  const follow = new Option(t("settings.languageSystem"), "");
+  follow.selected = !list.chosen;
+  menu.append(follow);
+  for (const tag of available) {
+    const named = list.bundled.find((l) => l.tag === tag);
+    const option = new Option(named ? named.name : tag, tag);
+    option.selected = list.chosen === tag;
+    menu.append(option);
+  }
+  el("language-folder").textContent = list.folder;
+
+  menu.onchange = async () => {
+    const chosen = menu.value || null;
+    await invoke("set_language", { language: chosen }).catch(reportError);
+    await window.zaruI18n.useLanguage(
+      chosen ?? matchLanguage(list.system, available) ?? window.zaruI18n.FALLBACK,
+      state.extraLocales,
+    );
+    retranslate();
+  };
+}
+
+/// The closest available language to what the system asked for.
+///
+/// Region is dropped so `pt-PT` finds `pt-BR`, but script is kept: `zh-Hant`
+/// must not quietly borrow `zh-Hans`, because a reader of one cannot read the
+/// other.
+function matchLanguage(requested, available) {
+  if (!requested) return null;
+  const parts = (tag) => {
+    const bits = tag.toLowerCase().replace(/_/g, "-").split("-");
+    return [bits[0], bits.find((b) => b.length === 4 && /^[a-z]+$/.test(b))];
+  };
+  const exact = available.find((a) => a.toLowerCase() === requested.toLowerCase());
+  if (exact) return exact;
+  const [language, script] = parts(requested);
+  return available.find((a) => {
+    const [theirs, theirScript] = parts(a);
+    return theirs === language && (!script || !theirScript || script === theirScript);
+  }) ?? null;
+}
+
+/// Redraws everything that was written in words rather than marked up.
+function retranslate() {
+  window.zaruI18n.translateDocument();
+  renderStatus();
+  renderKeymapEditor();
+  renderHelp();
+  window.gridUI?.render();
+}
+
 async function loadSettings() {
+  await loadLanguages();
   const [settings, actions] = await Promise.all([
     invoke("get_settings"),
     invoke("key_actions"),
   ]);
-  state.actionLabels = new Map(actions);
+  state.actionLabels = new Map(actions.map((id) => [id, t(`keymapAction.${id}`)]));
   adoptKeymap(settings.keymap);
 
   for (const input of document.querySelectorAll('input[name="compat"]')) {
@@ -1200,30 +1275,30 @@ function renderHelp() {
   };
 
   const k = state.keymap;
-  row(showKey(k.grid || "sem atalho"), "alterna foto / grade");
-  row("Ctrl+A · Ctrl+Espaço · Shift+setas", "na grade: selecionar todas, alternar seleção, selecionar intervalo");
-  row(showKey(k.prev), "foto anterior");
-  row(showKey(k.next), "próxima foto");
-  row(`Alt+${showKey(k.prev)} / Alt+${showKey(k.next)}`, "rajada anterior / próxima");
+  row(showKey(k.grid || t("settings.noKey")), t("help.gridToggle"));
+  row(t("help.gridKeys"), t("help.gridSelection"));
+  row(showKey(k.prev), t("help.prev"));
+  row(showKey(k.next), t("help.next"));
+  row(`Alt+${showKey(k.prev)} / Alt+${showKey(k.next)}`, t("help.burst"));
   row(
     [k.star1, k.star2, k.star3, k.star4, k.star5].map(showKey).join(" "),
-    "1 a 5 estrelas; a mesma tecla zera",
+    t("help.stars"),
   );
-  row(showKey(k.label), "etiqueta verde");
-  row(showKey(k.reject), "rejeita e avança");
-  row(k.collections.map(showKey).join(" "), "manda para a coleção 1, 2, 3…");
-  row(`Alt+${showKey(k.collections[0] ?? "")}`, "manda a rajada inteira");
-  row(showKey(k.newCollection), "nova coleção");
-  row(showKey(k.moveTo), "lista de coleções");
-  row(showKey(k.zoom), "alterna 1:1 e ajustado");
-  row(showKey(k.compare), "fixa esta foto para comparar");
-  row(showKey(k.filter), "filtrar o que aparece");
-  row("Ctrl+Z / Ctrl+Shift+Z", "desfaz / refaz");
-  row("Ctrl+Enter", "aplicar: grava os .xmp e move os arquivos");
-  row("Esc", "volta ao enquadramento inteiro");
-  row(showKey(k.open), "abrir pasta");
-  row(showKey(k.settings), "ajustes");
-  row(showKey(k.help), "estas teclas");
+  row(showKey(k.label), t("help.green"));
+  row(showKey(k.reject), t("help.reject"));
+  row(k.collections.map(showKey).join(" "), t("help.collections"));
+  row(`Alt+${showKey(k.collections[0] ?? "")}`, t("help.burstAssign"));
+  row(showKey(k.newCollection), t("help.newCollection"));
+  row(showKey(k.moveTo), t("help.moveTo"));
+  row(showKey(k.zoom), t("help.zoom"));
+  row(showKey(k.compare), t("help.compare"));
+  row(showKey(k.filter), t("help.filter"));
+  row("Ctrl+Z / Ctrl+Shift+Z", t("help.undo"));
+  row("Ctrl+Enter", t("help.apply"));
+  row("Esc", t("help.escape"));
+  row(showKey(k.open), t("help.open"));
+  row(showKey(k.settings), t("help.settings"));
+  row(showKey(k.help), t("help.help"));
 }
 
 // -------------------------------------------------------------- keyboard
@@ -1435,7 +1510,7 @@ function renderCollections() {
   if (!state.collections.length) {
     const message = document.createElement("p");
     message.className = "muted";
-    message.textContent = "Sua seleção começa aqui. Crie uma coleção para agrupar as fotos.";
+    message.textContent = t("collections.emptyHint");
     list.append(message);
   }
   state.collections.forEach((name, index) => {
@@ -1497,18 +1572,18 @@ async function renderExif() {
   const rows = [];
   const photo = state.photos[index];
   if (exif) {
-    if (exif.shutter) rows.push(["obturador", exif.shutter]);
-    if (exif.aperture != null) rows.push(["abertura", `f/${exif.aperture.toFixed(1)}`]);
-    if (exif.iso != null) rows.push(["ISO", String(exif.iso)]);
-    if (exif.focalMm != null) rows.push(["focal", `${Math.round(exif.focalMm)} mm`]);
+    if (exif.shutter) rows.push([t("exif.shutter"), exif.shutter]);
+    if (exif.aperture != null) rows.push([t("exif.aperture"), `f/${exif.aperture.toFixed(1)}`]);
+    if (exif.iso != null) rows.push([t("exif.iso"), String(exif.iso)]);
+    if (exif.focalMm != null) rows.push([t("exif.focal"), `${Math.round(exif.focalMm)} mm`]);
     if (exif.exposureBias != null && exif.exposureBias !== 0) {
-      rows.push(["compensação", `${exif.exposureBias > 0 ? "+" : ""}${exif.exposureBias.toFixed(1)} EV`]);
+      rows.push([t("exif.bias"), `${exif.exposureBias > 0 ? "+" : ""}${exif.exposureBias.toFixed(1)} EV`]);
     }
-    if (exif.width && exif.height) rows.push(["tamanho", `${exif.width} × ${exif.height}`]);
-    if (exif.camera) rows.push(["câmera", exif.camera]);
-    if (exif.lens) rows.push(["lente", exif.lens]);
+    if (exif.width && exif.height) rows.push([t("exif.size"), `${exif.width} × ${exif.height}`]);
+    if (exif.camera) rows.push([t("exif.camera"), exif.camera]);
+    if (exif.lens) rows.push([t("exif.lens"), exif.lens]);
   }
-  if (photo?.captured != null) rows.push(["disparo", fullTimestamp(photo.captured)]);
+  if (photo?.captured != null) rows.push([t("exif.captured"), fullTimestamp(photo.captured)]);
 
   const body = el("exif-body");
   body.replaceChildren();
@@ -1545,7 +1620,7 @@ function initInterface() {
     const close = document.createElement("button");
     close.className = "panel-close";
     close.dataset.close = "";
-    close.setAttribute("aria-label", "Fechar diálogo");
+    close.setAttribute("aria-label", t("common.closeDialog"));
     close.textContent = "×";
     panel.append(close);
     const cancel = document.createElement("button");

@@ -33,7 +33,11 @@ p { margin-bottom: 16px; }
 .wide { width: 100%; }
 .bar { position: fixed; left: 0; right: 0; display: flex; align-items: center; gap: 18px; background: var(--chrome); z-index: 2; padding: 0 22px; }
 .bar-top { top: 0; height: var(--top); border-bottom: 1px solid var(--line); }
-.brand { color: var(--ink); text-decoration: none; font-size: 26px; font-weight: 750; letter-spacing: -.08em; flex: none; }
+.brand { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; font-size: 26px; font-weight: 750; letter-spacing: -.08em; flex: none; }
+/* The mark takes its rim from the text colour, so wordmark and basket stay
+   one object however the surface is themed. */
+.mark { width: 25px; height: 25px; margin-right: 9px; color: currentColor; flex: none; }
+.mark-lg { width: 56px; height: 56px; margin: 0 0 18px; color: var(--ink); }
 .brand span { color: #757575; font-weight: 400; margin-left: 12px; }
 .folder { flex: 1; min-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c8c8c8; font-size: 13px; }
 nav, .secondary-actions { display: flex; align-items: center; gap: 8px; }

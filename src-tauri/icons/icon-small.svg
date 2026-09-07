@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Zaru</title>
+  <!-- Below about 24px the weave turns to grey mud and costs more contrast
+       than it carries meaning, so the small sizes keep only the silhouette. -->
+  <rect width="256" height="256" rx="58" fill="#232323"/>
+  <path d="M44 92A84 25 0 0 1 212 92" fill="none" stroke="#7a7a7a" stroke-width="18"/>
+  <circle cx="128" cy="96" r="31" fill="#edcd79"/>
+  <path d="M44 92A84 100 0 0 0 212 92" fill="none" stroke="#ededed" stroke-width="20" stroke-linecap="round"/>
+  <path d="M44 92A84 25 0 0 0 212 92" fill="none" stroke="#ededed" stroke-width="20" stroke-linecap="round"/>
+</svg>

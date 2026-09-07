@@ -7,8 +7,9 @@
   <link rel="stylesheet" href="app.css">
 </head>
 <body class="idle">
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><clipPath id="zaru-bowl"><path d="M40 90A88 26 0 0 0 216 90A88 104 0 0 1 40 90Z"/></clipPath></defs></svg>
   <header class="bar bar-top">
-    <a class="brand" href="#" aria-label="Sobre o Zaru e atalhos">zaru<span> / </span></a>
+    <a class="brand" href="#" aria-label="Sobre o Zaru e atalhos"><svg class="mark" viewBox="0 0 256 256" aria-hidden="true" focusable="false"><path d="M44 92A84 25 0 0 1 212 92" fill="none" stroke="#7a7a7a" stroke-width="18"/><circle cx="128" cy="96" r="31" fill="#edcd79"/><path d="M44 92A84 100 0 0 0 212 92" fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round"/><path d="M44 92A84 25 0 0 0 212 92" fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round"/></svg>zaru<span> / </span></a>
     <span id="folder" class="folder">Zaru</span>
     <nav aria-label="Ferramentas da sessão">
       <div class="mode-switch" role="group" aria-label="Visualização"><button data-command="photo" data-session aria-pressed="true">Foto</button><button data-command="grid" data-session aria-pressed="false">Grade</button></div>
@@ -49,7 +50,7 @@
     <button id="filter-chip" class="chip chip-filter" data-command="filter" hidden></button>
 
     <div id="empty" class="card">
-      <span class="eyebrow">SEU OLHAR. SUA SELEÇÃO.</span>
+      <svg class="mark mark-lg" viewBox="0 0 256 256" aria-hidden="true" focusable="false"><path d="M40 90A88 26 0 0 1 216 90" fill="none" stroke="#6e6e6e" stroke-width="15"/><circle cx="128" cy="94" r="27" fill="#edcd79"/><g clip-path="url(#zaru-bowl)" stroke="#8f8f8f" stroke-width="12" stroke-linecap="square"><path d="M84 92V210M172 92V210M20 146H236"/></g><path d="M40 90A88 104 0 0 0 216 90" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><path d="M40 90A88 26 0 0 0 216 90" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round"/></svg><span class="eyebrow">SEU OLHAR. SUA SELEÇÃO.</span>
       <h1>Menos fotos.<br>Mais intenção.</h1>
       <p id="empty-msg">Encontre as fotos que valem ficar. Abra uma pasta com arquivos Canon CR3 para começar.</p>
       <button id="open" class="primary" data-command="open">Abrir pasta <kbd data-key="open">o</kbd></button>

@@ -1,4 +1,4 @@
-# Zaru
+<img src="assets/logo.png" alt="Zaru" width="250">
 
 Culling de fotos RAW pelo teclado. Uma tecla por foto, avanço automático, sem
 mouse e sem espera.
@@ -313,6 +313,29 @@ Também não revela RAW, não edita, não mantém catálogo e não importa cart�
 `.exe` do Windows por cross-compile no mesmo runner** — o app linka contra o
 WebView2, não contra um webview do sistema, então mingw basta. O artefato
 `Zaru-win64` sai pronto de cada push.
+
+## Marca
+
+Um *zaru* (笊) é o cesto de bambu que escorre: o que importa fica, o resto passa.
+O ícone é essa peneira vista de ângulo, com uma coisa retida dentro — que é
+exatamente o que uma passada de triagem faz.
+
+O ângulo não é enfeite. Desenhada de frente, a peneira vira rim reto sobre arco
+e o conjunto lê como uma boca sorrindo; a elipse do rim é o que a devolve a
+objeto. Abaixo de uns 24 px a trama vira lama cinza e custa mais contraste do
+que carrega significado, então os tamanhos pequenos do `.ico` guardam só a
+silhueta — a fonte deles é um segundo SVG, não uma redução do primeiro.
+
+Os SVG em `assets/` e `src-tauri/icons/` são a fonte; os `.png` e o `.ico` são
+derivados e não se editam à mão:
+
+```
+tools/icon/build.sh        # precisa de rsvg-convert e ImageMagick
+```
+
+A palavra "zaru" do logotipo é a Archivo no peso 750 com o mesmo espacejamento
+da marca no app, convertida em contornos para o arquivo não depender de fonte
+instalada.
 
 ## Licença
 

@@ -1,487 +1,217 @@
-/* Neobrutalism, with one restriction that comes from the subject and outranks
-   every stylistic choice below it.
-
-   This app exists to judge exposure, focus and colour. The surround must not
-   lie about any of the three. Neutral grey is the standard surface for image
-   evaluation precisely for that reason: any tint in the ground shifts the
-   perception of white, and anything light around a photo makes its shadows
-   read as more closed than they are.
-
-   So the visor is pure neutral grey and nothing else. The brutalism lives in
-   the chrome — the bars, the chips, the panels — which is pinned to the edges
-   of the window and never crosses into the image. */
-
+/* Neutral surfaces keep exposure and colour judgments anchored to the photo. */
 @font-face {
-  font-family: "Archivo";
-  font-style: normal;
-  font-weight: 100 900;
-  font-stretch: 62% 125%;
-  font-display: block;
+  font-family: "Archivo"; font-style: normal; font-weight: 100 900;
+  font-stretch: 62% 125%; font-display: swap;
   src: url("fonts/archivo-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
 }
-@font-face {
-  font-family: "Archivo";
-  font-style: normal;
-  font-weight: 100 900;
-  font-stretch: 62% 125%;
-  font-display: block;
-  src: url("fonts/archivo-latin-ext.woff2") format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-
 :root {
-  --visor: #1C1C1C;
-  --chrome: #E8E6E1;
-  --ink: #000000;
-  --green: #00A651;
-  --reject: #FF3B2F;
-  --star: #FFD400;
-
-  /* Six values. Three of them are semantic and come from meaning, not taste. */
-
-  --rule: 3px;
-  --bar: 46px;
-  /* Offset with no blur. A soft shadow is a different language entirely. */
-  --drop: 5px 5px 0 var(--ink);
+  color-scheme: dark;
+  --visor: #1c1c1c; --chrome: #242424; --surface: #2b2b2b;
+  --ink: #ededed; --muted: #b1b1b1; --line: #414141;
+  --green: #79dba4; --reject: #ff9a92; --star: #edcd79;
+  --top: 64px; --bottom: 80px; --side: 0px; --rule: 3px;
 }
-
 * { box-sizing: border-box; }
-
-/* Real black. Brutalism with a softened black (#0B0B0B, #111) loses the whole
-   point — the hardness is the language. */
-html, body {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-  background: var(--visor);
-  color: var(--ink);
-  font: 400 14px/1.45 "Archivo", system-ui, sans-serif;
-  font-stretch: 100%;
-  user-select: none;
-  cursor: default;
-}
-
-/* Frame numbers must not reflow as they change, or the counter dances on every
-   photo and the eye chases the motion instead of reading the frame. */
-.counter, .latency, .name { font-variant-numeric: tabular-nums; }
-
-/* ------------------------------------------------------------------ bars */
-
-.bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  height: var(--bar);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 14px;
-  background: var(--chrome);
-  z-index: 2;
-}
-/* The rule that matters is the one facing the image; the other three edges sit
-   against the window frame, where a border would only be a hairline. */
-.bar-top { top: 0; border-bottom: var(--rule) solid var(--ink); }
-.bar-bottom { bottom: 0; border-top: var(--rule) solid var(--ink); }
-.spacer { flex: 1; }
-
-/* The width axis does the hierarchy a second typeface would normally do. */
-.folder {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  font-stretch: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.counter {
-  font-size: 21px;
-  font-weight: 800;
-  font-stretch: 125%;
-  letter-spacing: -0.01em;
-}
-.name { font-weight: 500; font-stretch: 87%; }
-.latency { font-size: 12px; font-weight: 400; font-stretch: 87%; }
-.burst { font-weight: 500; font-stretch: 87%; font-variant-numeric: tabular-nums; }
-.zoom {
-  padding: 2px 8px;
-  border: var(--rule) solid var(--ink);
-  background: #FFF;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.chip-filter { background: #FFF; }
-
-/* ------------------------------------------------------- rating and chips */
-
-/* Five hard cells rather than star glyphs: at this border weight a row of
-   filled squares reads as a rating at a glance, and it is the same vocabulary
-   as everything else on the bar. */
-.meter {
-  display: flex;
-  border: var(--rule) solid var(--ink);
-  background: var(--chrome);
-}
-.meter i {
-  width: 17px;
-  height: 22px;
-  border-left: var(--rule) solid var(--ink);
-}
-.meter i:first-child { border-left: 0; }
-.meter i.on { background: var(--star); }
-.meter[hidden] { display: none; }
-
-.chip {
-  padding: 2px 9px;
-  border: var(--rule) solid var(--ink);
-  font-weight: 600;
-  font-stretch: 100%;
-}
-.chip-green { background: var(--green); }
-.chip-reject { background: var(--reject); }
-
-/* A collection has no meaning Zaru can colour it by, so the colour comes from
-   a hash of its name: stable, distinct, and never mistaken for the three chips
-   that do carry meaning. Black border and black text, like everything else. */
-.chip-collection { background: var(--chip, var(--chrome)); }
-
-/* Before a folder is open there is nothing to count and nothing to rate, and a
-   placeholder dash in the corner is just noise wearing a value's clothes. */
-body.idle .counter,
-body.idle .meter,
-body.idle .name,
-body.idle .latency,
-body.idle .burst,
-body.idle .zoom,
-body.idle .chip { display: none; }
-
-/* One flash, under 120ms, to answer "did that register?" — and nothing else
-   moves anywhere in this app. */
-@keyframes zaru-flash {
-  50% { filter: invert(1); }
-}
-.flash { animation: zaru-flash 110ms steps(1, end) 1; }
-
-/* ------------------------------------------------------ pickers and fields */
-
-/* The collection list is picked by digit, so the digit is the object on the
-   left and the name reads off it. */
-.picker {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: max-content 1fr max-content;
-  gap: 8px 14px;
-  align-items: center;
-}
-.picker li { display: contents; }
-.picker b { font-weight: 500; font-stretch: 87%; font-variant-numeric: tabular-nums; }
-.picker .none { grid-column: 1 / -1; font-stretch: 87%; }
-.picker .chosen { font-weight: 700; }
-.picker .chosen::after { content: " ·  ativo"; font-weight: 500; font-stretch: 87%; }
-
-input[type="text"] {
-  display: block;
-  width: 100%;
-  padding: 8px 11px;
-  font: inherit;
-  font-weight: 600;
-  font-stretch: 100%;
-  color: var(--ink);
-  background: #FFF;
-  border: var(--rule) solid var(--ink);
-  border-radius: 0;
-}
-input[type="text"]::placeholder { color: #0006; font-weight: 400; }
-/* The field already has the 3px rule; a separate ring outside it reads as two
-   boxes. Focus thickens the rule it already has instead. */
-input[type="text"]:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 var(--rule) var(--ink);
-}
-
-.failure { font-weight: 700; }
-.blockers { margin-top: 14px; }
-.blockers ul { margin: 6px 0 0; padding-left: 20px; font-stretch: 87%; }
-.blockers li { margin: 2px 0; }
-
-.hint button { margin-right: 12px; }
-
-/* One rebindable action per row: what it does on the left, the key on the
-   right. Pressing a row makes it wait for whatever key comes next. */
-.keymap {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 4px 10px;
-}
-.keyrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 6px 4px 10px;
-  font: inherit;
-  font-stretch: 87%;
-  font-weight: 500;
-  text-align: left;
-  background: none;
-  border: 2px solid transparent;
-  box-shadow: none;
-}
-.keyrow:hover { border-color: var(--ink); }
-.keyrow kbd { min-width: 34px; text-align: center; }
-.keyrow.capturing { border-color: var(--ink); background: var(--star); }
-
-.panel h2.section {
-  margin-top: 26px;
-  padding-top: 16px;
-  border-top: var(--rule) solid var(--ink);
-}
-button[disabled] {
-  cursor: not-allowed;
-  color: #0007;
-  background: repeating-linear-gradient(
-    45deg, var(--chrome), var(--chrome) 5px, #0000000f 5px, #0000000f 10px
-  );
-  box-shadow: none;
-}
-button[disabled]:active { transform: none; }
-
-/* --------------------------------------------------------------- visor */
-
-/* The stage never changes size. Portrait and landscape land in the same box,
-   so the user keeps their spatial reference from one frame to the next. */
-#stage {
-  position: fixed;
-  top: var(--bar);
-  bottom: var(--bar);
-  left: 0;
-  right: 0;
-  background: var(--visor);
-  overflow: hidden;
-}
-
-#ring { position: absolute; inset: 0; }
-
-/* The photo gets no border, no shadow and no frame. It is the content; all the
-   rest is the apparatus. And no transition of any kind: a fade between frames
-   is latency wearing a costume. */
-/* The clipping box is the pane; the image inside it is what moves and scales.
-   Nothing ever escapes its half of the stage. */
-#ring .frame {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  overflow: hidden;
-  visibility: hidden;
-}
-#ring .frame.shown { visibility: visible; }
-
-#ring img {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  object-fit: contain;
-}
-
-/* Compare mode: two panes sharing one zoom and one pan, so the same corner of
-   both frames is under the eye at the same magnification. The rule between
-   them is the same 3px rule as everywhere else. */
-#divider {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: var(--rule);
-  margin-left: calc(var(--rule) / -2);
-  background: var(--ink);
-  z-index: 1;
-}
-#divider[hidden] { display: none; }
-
-.pane-tag {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 1;
-  padding: 2px 9px;
-  border: var(--rule) solid var(--ink);
-  background: var(--chrome);
-  font-weight: 700;
-  font-stretch: 87%;
-}
-.pane-tag[hidden] { display: none; }
-
-/* The photo is grabbable at any zoom; panning is clamped, not disabled, so the
-   affordance never lies about being there. */
-#stage { cursor: grab; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--visor); color: var(--ink); font: 400 14px/1.5 "Archivo", system-ui, sans-serif; user-select: none; }
+button, input, summary { font: inherit; }
+button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
+button:hover, summary:hover { background: #363636; border-color: #686868; }
+button:active { background: #414141; }
+button.primary { background: #e5e5e5; color: #191919; border-color: #e5e5e5; font-weight: 650; }
+button.primary:hover { background: #fff; }
+button[disabled] { opacity: .4; cursor: not-allowed; }
+button[aria-pressed="true"] { border-color: #b1b1b1; background: #414141; }
+:focus-visible { outline: 2px solid #e5e5e5; outline-offset: 3px; }
+.primary:focus-visible { outline-offset: 4px; }
+h1, h2, h3, p { margin-top: 0; }
+h2 { font-size: 20px; font-weight: 650; letter-spacing: -.03em; }
+h3 { font-size: 15px; margin: 24px 0 12px; }
+p { margin-bottom: 16px; }
+.muted, .hint { color: var(--muted); }
+.wide { width: 100%; }
+.bar { position: fixed; left: 0; right: 0; display: flex; align-items: center; gap: 18px; background: var(--chrome); z-index: 2; padding: 0 22px; }
+.bar-top { top: 0; height: var(--top); border-bottom: 1px solid var(--line); }
+.brand { color: var(--ink); text-decoration: none; font-size: 26px; font-weight: 750; letter-spacing: -.08em; flex: none; }
+.brand span { color: #757575; font-weight: 400; margin-left: 12px; }
+.folder { flex: 1; min-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c8c8c8; font-size: 13px; }
+nav, .secondary-actions { display: flex; align-items: center; gap: 8px; }
+nav > button:not(.primary), .secondary-actions button { background: transparent; border-color: transparent; }
+nav > button:hover, .secondary-actions button:hover { background: var(--surface); }
+.shortcut { opacity: .65; font-size: 11px; margin-left: 6px; }
+#more-actions { display: none; position: relative; }
+summary { cursor: pointer; border-radius: 6px; padding: 7px 10px; }
+#more-actions > div { position: absolute; top: 42px; right: 0; padding: 8px; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 6px; min-width: 140px; }
+.bar-bottom { bottom: 0; height: var(--bottom); border-top: 1px solid var(--line); gap: 12px; }
+.photo-info { display: flex; flex-direction: column; flex: 1; min-width: 80px; }
+.name { font-size: 12px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.burst { font-size: 11px; }
+.control-group { display: flex; align-items: center; gap: 4px; flex: none; }
+.counter { font-size: 12px; min-width: 78px; text-align: center; white-space: nowrap; }
+.counter, .name, .burst, #latency { font-variant-numeric: tabular-nums; }
+.navigation button { border-color: transparent; background: transparent; font-size: 25px; width: 30px; padding: 0; }
+.meter { gap: 0; }
+.meter button { font-size: 21px; min-width: 29px; padding: 2px; color: #929292; border-color: transparent; background: transparent; }
+.meter button.on { color: var(--star); }
+.meter button[aria-pressed="true"] { background: #363229; border-color: #6f6040; }
+.green-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.flash { outline: 1px solid #999; outline-offset: 2px; border-radius: 6px; }
+#label[aria-pressed="true"] { color: var(--green); border-color: #568167; background: #29392f; }
+#reject[aria-pressed="true"] { color: var(--reject); border-color: #95605b; background: #3d2b29; }
+.chip { font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; }
+.chip-collection { color: var(--chip, var(--ink)); background: #303030; max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#stage { position: fixed; top: var(--top); bottom: var(--bottom); left: var(--side); right: 0; background: var(--visor); overflow: hidden; cursor: grab; }
 body.dragging #stage { cursor: grabbing; }
-body.idle #stage { cursor: default; }
+body.idle #stage, body.no-results #stage { cursor: default; }
+#ring { position: absolute; inset: 0; }
+#ring .frame { position: absolute; top: 0; bottom: 0; overflow: hidden; visibility: hidden; }
+#ring .frame.shown { visibility: visible; }
+#ring img { position: absolute; top: 50%; left: 50%; object-fit: contain; }
+/* Frame swaps and image geometry deliberately have no animations. */
+#divider { position: absolute; inset: 0 auto 0 50%; width: 3px; margin-left: -1.5px; background: #111; z-index: 1; }
+.pane-tag { position: absolute; top: 12px; left: 12px; z-index: 1; max-width: calc(50% - 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #242424ed; border: 1px solid #555; border-radius: 4px; padding: 4px 9px; font-size: 11px; }
+.current-tag { left: calc(50% + 12px); }
+#filter-chip { position: absolute; bottom: 12px; left: 12px; z-index: 1; background: #242424ed; }
+.card { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(520px, 88%); padding: 32px; }
+#empty { padding: 24px 16px; }
+.eyebrow { display: block; font-size: 10px; font-weight: 600; letter-spacing: .18em; color: #aaa; margin-bottom: 20px; }
+#empty h1 { font-size: clamp(36px, 4vw, 52px); line-height: 1.08; letter-spacing: -.055em; font-weight: 650; margin-bottom: 22px; }
+#empty-msg { color: #b9b9b9; max-width: 42ch; line-height: 1.7; }
+#empty > button { margin: 5px 0 26px; padding: 10px 18px; }
+.intro-steps { display: flex; gap: 28px; border-top: 1px solid var(--line); padding-top: 22px; margin-bottom: 18px; font-size: 12px; }
+.intro-steps b { color: #a0a0a0; font-size: 10px; margin-right: 5px; font-weight: 400; }
+#empty .muted { font-size: 12px; margin-bottom: 0; }
+#no-results { text-align: center; background: var(--chrome); border: 1px solid var(--line); border-radius: 10px; }
+body.idle .bar-bottom { justify-content: center; }
+body.idle .bar-bottom > :not(.photo-info) { display: none; }
+body.idle .photo-info { flex: none; color: var(--muted); }
+body.idle .burst { display: none; }
+body.collections-open { --side: 260px; }
+#collections-sidebar { position: fixed; top: var(--top); bottom: var(--bottom); left: 0; width: 260px; z-index: 2; padding: 20px 16px; background: var(--chrome); border-right: 1px solid var(--line); overflow-y: auto; }
+.sidebar-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.sidebar-heading h2 { font-size: 17px; margin: 0; }
+.sidebar-heading button { font-size: 20px; background: transparent; border: 0; }
+#collections-sidebar p { font-size: 12px; }
+.collection-list { display: grid; gap: 8px; margin: 18px 0; }
+.collection-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; text-align: left; width: 100%; gap: 8px; }
+.collection-row .collection-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chip); }
+.collection-row small { color: var(--muted); }
+.sidebar-tip { margin-top: 18px; }
+#backdrop { position: fixed; inset: 0; z-index: 4; background: #0009; }
+.panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(600px, calc(100vw - 40px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 28px; z-index: 5; border: 1px solid #525252; border-radius: 10px; background: var(--chrome); box-shadow: 0 20px 80px #0005; }
+.panel > h2:first-child { padding-right: 45px; }
+.panel > p { max-width: 56ch; }
+.panel-close { position: absolute; top: 16px; right: 16px; width: 32px; min-height: 32px; padding: 0; background: transparent; border: 0; font-size: 22px; }
+.dialog-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.hint { border-top: 1px solid var(--line); padding-top: 18px; margin: 22px 0 0; font-size: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#help .hint { display: block; }
+#settings { width: min(780px, calc(100vw - 40px)); }
+.panel h2.section { font-size: 16px; border-top: 1px solid var(--line); padding-top: 22px; margin-top: 24px; }
+.choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+.choice:has(input:checked) { border-color: #aaa; background: #303030; }
+.choice input { margin-top: 4px; accent-color: #ddd; }
+.choice span { min-width: 0; }
+.choice b { margin-right: 8px; }
+.choice small { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; }
+code { font-size: 12px; color: #ccc; overflow-wrap: anywhere; margin-right: 8px; }
+.keymap { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+.keyrow { justify-content: space-between; text-align: left; white-space: normal; min-width: 0; background: transparent; font-size: 12px; }
+.keyrow span { min-width: 0; }
+.keyrow.capturing { border-color: var(--star); }
+kbd, .keys dt { border: 1px solid #555; border-radius: 4px; background: #333; color: #ddd; font: 400 11px/1.5 "Archivo", system-ui, sans-serif; padding: 2px 6px; flex: none; white-space: nowrap; }
+.primary kbd { background: #d0d0d0; border-color: #aaa; color: #222; }
+.keys { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 18px; align-items: baseline; font-size: 13px; }
+.keys dt { justify-self: start; }
+.keys dd { margin: 0; }
+.picker { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.picker button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; width: 100%; text-align: left; gap: 12px; }
+.picker button span { white-space: normal; overflow-wrap: anywhere; }
+.picker b { font-size: 12px; font-weight: 400; color: var(--muted); }
+.picker .chosen::after { content: " · ativo"; color: var(--muted); font-size: 11px; }
+.tally { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 12px 18px; margin: 24px 0; }
+.tally dt { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; justify-self: end; }
+.tally dd { margin: 0; overflow-wrap: anywhere; }
+.tally .note { color: var(--muted); font-size: 12px; }
+.tally .failure { grid-column: 1 / -1; }
+.failure { color: #ffaaa3; margin-top: 10px; overflow-wrap: anywhere; }
+.blockers { margin-top: 18px; }
+input[type="text"] { width: 100%; margin-top: 8px; min-height: 42px; padding: 8px 12px; border: 1px solid #696969; border-radius: 6px; background: #191919; color: var(--ink); user-select: text; }
+input::placeholder { color: #999; }
+.diagnostics { margin-top: 20px; color: var(--muted); font-size: 12px; }
+.diagnostics p { margin: 12px 10px 0; }
+#notice { position: fixed; bottom: calc(var(--bottom) + 16px); left: 50%; transform: translateX(-50%); z-index: 6; max-width: min(600px, 90vw); padding: 12px 18px; background: #333; border: 1px solid #777; border-radius: 6px; box-shadow: 0 8px 24px #0005; }
+@media (max-width: 1250px) {
+  .bar-bottom { gap: 7px; padding: 0 12px; }
+  .bar-bottom > .chip-collection { display: none; }
+  .view-controls button, .decisions button { font-size: 12px; padding: 7px 8px; }
+}
+@media (max-width: 1099px) {
+  :root { --bottom: 104px; }
+  .bar { padding-left: 16px; padding-right: 16px; }
+  .secondary-actions { display: none; }
+  #more-actions { display: block; }
+  .shortcut { display: none; }
+  .bar-top { gap: 12px; }
+  nav { gap: 4px; }
+  nav button { font-size: 12px; padding: 7px 9px; }
+  .bar-bottom { flex-wrap: wrap; justify-content: center; align-content: center; gap: 8px 14px; }
+  .photo-info { flex: 1 1 calc(100% - 200px); }
+  .navigation { margin-left: auto; }
+  body.collections-open { --side: 0px; }
+  #collections-sidebar { box-shadow: 12px 0 32px #0006; }
+}
+@media (max-width: 600px) {
+  :root { --top: 104px; --bottom: 148px; }
+  .bar-top { flex-wrap: wrap; align-content: center; gap: 6px 12px; }
+  nav { width: 100%; justify-content: space-between; }
+  nav button { padding: 6px; font-size: 11px; }
+  .brand { font-size: 22px; }
+  .bar-bottom { gap: 6px; }
+  .keymap { grid-template-columns: 1fr; }
+  .panel { padding: 22px; }
+  .keys { grid-template-columns: 1fr; gap: 4px; }
+  .keys dd { margin-bottom: 8px; }
+  .intro-steps { gap: 16px; }
+  #empty h1 { font-size: 32px; }
+  #empty { padding: 12px; }
+  #empty .muted { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } .flash { outline: none; } }
 
-/* ------------------------------------------------------ panels and cards */
-
-.card, .panel {
-  background: var(--chrome);
-  border: var(--rule) solid var(--ink);
-  box-shadow: var(--drop);
-  border-radius: 0;
-}
-
-#empty {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(420px, 84%);
-  padding: 26px 28px;
-  text-align: left;
-}
-#empty[hidden] { display: none; }
-#empty h1 {
-  margin: 0 0 4px;
-  font-size: 34px;
-  font-weight: 800;
-  font-stretch: 125%;
-  letter-spacing: -0.02em;
-}
-#empty p { margin: 0 0 20px; }
-#empty .hint { margin-top: 24px; }
-
-.panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(600px, 90vw);
-  max-height: 88vh;
-  overflow: auto;
-  padding: 22px 24px;
-  z-index: 3;
-}
-.panel[hidden] { display: none; }
-/* The settings panel carries the whole key map, so it gets room for it. */
-#settings { width: min(820px, 94vw); }
-.panel h2 {
-  margin: 0 0 10px;
-  font-size: 19px;
-  font-weight: 800;
-  font-stretch: 112%;
-}
-.panel > p { margin: 0 0 14px; }
-.panel > p:not(.hint) { max-width: 52ch; }
-/* Counts read as a column, so the eye compares them without hunting. */
-.tally {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 7px 14px;
-  margin: 0;
-  align-items: baseline;
-}
-.tally dt {
-  justify-self: end;
-  font-size: 19px;
-  font-weight: 800;
-  font-stretch: 112%;
-  font-variant-numeric: tabular-nums;
-}
-.tally dd { margin: 0; }
-.tally + .hint { margin-top: 28px; }
-.tally .failure { grid-column: 1 / -1; justify-self: start; }
-.tally .note { font-stretch: 87%; }
-
-.keys {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 6px 18px;
-  margin: 0;
-  align-items: center;
-}
-.keys dd { margin: 0; font-stretch: 87%; }
-
-/* The key names are the same objects as the `Esc` below the list, so they are
-   drawn the same way. */
-.keys dt, kbd {
-  justify-self: start;
-  padding: 2px 7px;
-  border: 2px solid var(--ink);
-  background: #FFF;
-  font-weight: 700;
-  font-stretch: 100%;
-  font-size: 13px;
-}
-
-/* A hard rule, not a gap, is what separates a block from its footnote here. */
-.hint {
-  margin: 22px 0 0;
-  padding-top: 12px;
-  border-top: var(--rule) solid var(--ink);
-  font-stretch: 87%;
-}
-
-/* ------------------------------------------------------------- controls */
-
-/* Radios and buttons are square, bordered and press by displacement — the
-   shadow is under them, so pushing them into it is the whole affordance. */
-.choice {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  margin: 0 0 12px;
-  cursor: pointer;
-}
-.choice input {
-  appearance: none;
-  flex: none;
-  width: 19px;
-  height: 19px;
-  margin: 2px 0 0;
-  border: var(--rule) solid var(--ink);
-  background: #FFF;
-  cursor: pointer;
-}
-.choice input:checked { background: var(--ink); box-shadow: inset 0 0 0 3px #FFF; }
-.choice span { display: block; }
-.choice b { font-weight: 700; margin-right: 8px; }
-.choice small { display: block; margin-top: 5px; font-size: 13px; font-stretch: 87%; }
-
-button {
-  font: inherit;
-  font-weight: 700;
-  font-stretch: 100%;
-  padding: 6px 14px;
-  color: var(--ink);
-  background: var(--chrome);
-  border: var(--rule) solid var(--ink);
-  border-radius: 0;
-  box-shadow: 4px 4px 0 var(--ink);
-  cursor: pointer;
-}
-/* Instant, not animated. Displacement is a state, not a transition. */
-button:active {
-  transform: translate(4px, 4px);
-  box-shadow: none;
-}
-
-code {
-  padding: 1px 6px;
-  margin-right: 6px;
-  border: 2px solid var(--ink);
-  background: #FFF;
-  font: inherit;
-  font-stretch: 87%;
-  font-weight: 500;
-}
-kbd { font: inherit; }
-
-:focus-visible { outline: var(--rule) solid var(--ink); outline-offset: 3px; }
-
-@media (prefers-reduced-motion: reduce) {
-  .flash { animation: none; }
-}
+/* The grid virtualizes complete rows; its canvas count is bounded by the viewport. */
+.mode-switch { display: flex; padding: 3px; background: #191919; border: 1px solid var(--line); border-radius: 7px; }
+.mode-switch button { min-height: 28px; padding: 3px 9px; border-color: transparent; background: transparent; }
+.mode-switch button[aria-pressed="true"] { background: #414141; }
+body.grid-mode #stage { cursor: default; }
+body.grid-mode #ring, body.grid-mode #divider, body.grid-mode .pane-tag { display: none; }
+#grid-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.grid-toolbar, .grid-apply { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #202020; flex: none; }
+.grid-toolbar { justify-content: space-between; border-bottom: 1px solid var(--line); }
+#grid-total { font-size: 12px; margin-left: 12px; }
+.grid-actions { display: flex; gap: 6px; }
+.grid-toolbar button, .grid-apply button { font-size: 12px; }
+.grid-apply { border-top: 1px solid var(--line); }
+.grid-apply > span { flex: 1; font-size: 11px; }
+#grid-scroll { overflow: auto; position: relative; flex: 1; min-height: 0; outline-offset: -3px; }
+#grid-content { position: relative; margin: 14px; }
+.grid-card { position: absolute; display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; border-radius: 7px; border: 2px solid #414141; background: #242424; overflow: hidden; cursor: pointer; }
+.grid-card[aria-selected="true"] { border-color: #ead393; background: #353127; }
+.grid-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.grid-image { position: relative; height: 146px; background: #161616; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.grid-image canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+.grid-card .selection-tick { position: absolute; left: 8px; top: 8px; z-index: 1; height: 20px; width: 20px; border: 1px solid #888; border-radius: 4px; background: #242424bb; text-align: center; color: #181818; }
+.grid-card[aria-selected="true"] .selection-tick { background: #ead393; border-color: #ead393; }
+.grid-caption { display: flex; flex-direction: column; padding: 8px 10px; gap: 3px; font-size: 11px; }
+.grid-caption > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grid-marks { color: var(--star); min-height: 17px; }
+.grid-collection { color: var(--chip, var(--muted)); min-height: 17px; }
+.pending-dot { float: right; color: #edcd79; }
+.thumbnail-error { color: var(--muted); font-size: 11px; padding: 10px; text-align: center; }
+body.grid-mode .navigation, body.grid-mode .view-controls { display: none; }
+body.grid-mode #filter-chip { bottom: 76px; }
+#batch-clear { position: relative; }
+#batch-clear > div { position: absolute; bottom: 42px; right: 0; padding: 8px; background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 6px; }
+@media (max-width: 1250px) { .secondary-actions { display: none; } #more-actions { display: block; } .shortcut { display: none; } }
+@media (max-width: 1099px) { .grid-apply { flex-wrap: wrap; padding: 10px 14px; } .grid-apply > span { flex-basis: 100%; } .bar-top { gap: 8px; } nav { gap: 2px; } }
+@media (max-width: 850px) { .bar-top .folder { max-width: 125px; } .mode-switch button { padding: 3px 6px; } nav button { padding: 6px; font-size: 11px; } .grid-toolbar { padding: 10px; } #grid-total { display: block; margin: 0; } }

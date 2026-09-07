@@ -9,7 +9,10 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+mod scoped;
+pub use scoped::{BatchEdit, ApplyOperation};
 use zaru_cr3::Cr3Info;
 use zaru_xmp::{Marks, SidecarStyle, REJECTED};
 
@@ -55,6 +58,7 @@ pub struct SessionView {
     pub collections: Vec<String>,
     /// Index into `collections`, per photo. A photo belongs to at most one.
     pub assigned: Vec<Option<usize>>,
+    pub pending_xmp: Vec<bool>,
 }
 
 /// The result of one command that changed a photo. Undo returns the same shape,
@@ -66,6 +70,7 @@ pub struct PhotoChange {
     pub index: usize,
     pub mark: Marks,
     pub collection: Option<usize>,
+    pub pending_xmp: bool,
 }
 
 /// What Apply is about to do, worked out before anything is touched.
@@ -95,6 +100,9 @@ pub struct PlannedMove {
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyReport {
+    pub completed_xmp: Vec<usize>,
+    pub completed_moves: Vec<usize>,
+    pub failed_photo: Option<usize>,
     pub sidecars: usize,
     pub moved: usize,
     pub files_moved: usize,
@@ -116,6 +124,7 @@ pub struct WriteReport {
 }
 
 enum Change {
+    Batch { marks: Vec<(usize, Marks, Marks)>, assignments: Vec<(usize, Option<usize>, Option<usize>)> },
     Mark { index: usize, before: Marks, after: Marks },
     Assign { index: usize, before: Option<usize>, after: Option<usize> },
     /// A whole burst sent to one collection. It was one keystroke, so it is one
@@ -129,6 +138,7 @@ pub struct Session {
     folder: PathBuf,
     photos: Vec<Photo>,
     marks: Vec<Marks>,
+    saved_marks: Vec<Marks>,
     collections: Vec<String>,
     assigned: Vec<Option<usize>>,
     /// Burst id per photo, plus where each burst starts and how long it is.
@@ -173,6 +183,7 @@ impl Session {
             marks: self.marks.clone(),
             collections: self.collections.clone(),
             assigned: self.assigned.clone(),
+            pending_xmp: self.marks.iter().zip(&self.saved_marks).map(|(a,b)| a != b).collect(),
         }
     }
 
@@ -206,6 +217,7 @@ impl Session {
         let (bursts, burst_starts, burst_sizes) = group_bursts(&photos);
         self.folder = folder.to_path_buf();
         self.marks = vec![Marks::default(); photos.len()];
+        self.saved_marks = self.marks.clone();
         self.assigned = vec![None; photos.len()];
         self.collections.clear();
         self.bursts = bursts;
@@ -229,9 +241,13 @@ impl Session {
 
     /// True when there is anything worth saving against a crash.
     pub fn has_work(&self) -> bool {
-        self.marks.iter().any(|m| !m.is_empty())
+        self.marks != self.saved_marks
             || self.assigned.iter().any(|a| a.is_some())
             || !self.collections.is_empty()
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.marks != self.saved_marks || self.assigned.iter().any(Option::is_some)
     }
 
     pub fn snapshot(&self) -> Recovery {
@@ -241,20 +257,38 @@ impl Session {
             marks: self.marks.clone(),
             collections: self.collections.clone(),
             assigned: self.assigned.clone(),
+            paths: self.photos.iter().map(|p| p.path.strip_prefix(&self.folder).unwrap().to_string_lossy().to_string()).collect(),
+            saved_marks: self.saved_marks.clone(),
         }
     }
 
-    /// Takes back a snapshot, but only if it still describes this folder.
-    /// Undo history is not restored — it belongs to a session that has ended.
     pub fn restore(&mut self, saved: Recovery) -> bool {
-        if !saved.matches(&self.names()) {
-            return false;
-        }
+        if !saved.valid_for(&self.folder) { return false; }
+        let paths = saved.resolved_paths();
+        let photos = probe_all(&paths);
+        if photos.len() != paths.len() { return false; }
+        let (bursts, starts, sizes) = group_bursts(&photos);
+        self.photos = photos;
+        self.bursts = bursts;
+        self.burst_starts = starts;
+        self.burst_sizes = sizes;
+        self.saved_marks = if saved.saved_marks.is_empty() { vec![Marks::default(); saved.marks.len()] } else { saved.saved_marks };
         self.marks = saved.marks;
         self.collections = saved.collections;
         self.assigned = saved.assigned;
         self.undo.clear();
         self.redo.clear();
+        true
+    }
+
+    /// Makes an all-moved folder available so recovery can still be offered.
+    pub fn open_recoverable(&mut self, folder: &Path, saved: &Recovery) -> bool {
+        if !saved.valid_for(folder) { return false; }
+        self.folder = folder.to_path_buf();
+        if !self.restore(saved.clone()) { return false; }
+        self.marks = self.saved_marks.clone();
+        self.assigned.fill(None);
+        self.collections.clear();
         true
     }
 
@@ -392,139 +426,11 @@ impl Session {
     /// files — is never a surprise, and so a name collision is caught while it
     /// is still a sentence on screen rather than a half-finished move.
     pub fn plan(&self, styles: &[SidecarStyle]) -> ApplyPlan {
-        let mut plan = ApplyPlan::default();
-        let mut per_collection: Vec<(usize, usize)> = vec![(0, 0); self.collections.len()];
-        // Destinations claimed by this run, so two photos with the same stem
-        // going to one collection are caught as well as pre-existing files.
-        let mut claimed: BTreeSet<PathBuf> = BTreeSet::new();
-        let index_of_siblings = sibling_index(&self.folder, &self.photos);
-
-        for (index, photo) in self.photos.iter().enumerate() {
-            let mark = &self.marks[index];
-            let collection = self.assigned[index];
-
-            if mark.is_empty() && collection.is_none() {
-                plan.untouched += 1;
-                continue;
-            }
-            plan.evaluated += 1;
-            if !mark.is_empty() {
-                plan.sidecars += 1;
-            }
-            if mark.is_rejected() {
-                plan.rejected += 1;
-            }
-
-            let Some(c) = collection else { continue };
-            let target = self.folder.join(&self.collections[c]);
-            // Sidecars that do not exist yet still have to be counted and
-            // checked: Apply writes them, and then they move too.
-            let files = planned_files(photo, &index_of_siblings, mark, styles);
-
-            per_collection[c].0 += 1;
-            per_collection[c].1 += files.len();
-
-            for file in &files {
-                let Some(name) = file.file_name() else { continue };
-                let destination = target.join(name);
-                if destination.exists() || !claimed.insert(destination.clone()) {
-                    plan.blockers.push(format!(
-                        "{}/{} já existe",
-                        self.collections[c],
-                        name.to_string_lossy()
-                    ));
-                }
-            }
-        }
-
-        // A file sitting where a collection folder needs to be would make the
-        // whole move impossible, so it is worth saying before anything starts.
-        for name in &self.collections {
-            let path = self.folder.join(name);
-            if path.exists() && !path.is_dir() {
-                plan.blockers.push(format!("{name} já existe e não é uma pasta"));
-            }
-        }
-
-        plan.moves = self
-            .collections
-            .iter()
-            .zip(&per_collection)
-            .filter(|(_, (photos, _))| *photos > 0)
-            .map(|(name, (photos, files))| PlannedMove {
-                collection: name.clone(),
-                photos: *photos,
-                files: *files,
-            })
-            .collect();
-
-        plan.blockers.sort();
-        plan.blockers.dedup();
-        plan
+        self.plan_selection(None, ApplyOperation::Both, styles).unwrap_or_default()
     }
 
-    /// Writes the sidecars, then moves the files. In that order, always: the
-    /// `.xmp` has to exist before the move, or it would be left behind in the
-    /// working folder while its photo went into a collection.
-    ///
-    /// Nothing is deleted, here or anywhere. A rejected photo gets `-1` in its
-    /// metadata and stays exactly where it is; what to do about it afterwards
-    /// is the user's decision, with the user's own tools.
     pub fn apply(&mut self, styles: &[SidecarStyle]) -> ApplyReport {
-        let plan = self.plan(styles);
-        let mut report = ApplyReport {
-            rejected: plan.rejected,
-            untouched: plan.untouched,
-            ..ApplyReport::default()
-        };
-
-        if !plan.blockers.is_empty() {
-            report.error = Some(plan.blockers.join("; "));
-            return report;
-        }
-
-        let written = self.write_xmp(styles);
-        report.sidecars = written.written;
-        if let Some(e) = written.error {
-            report.error = Some(e);
-            return report;
-        }
-
-        // Indexed only now, so the sidecars just written are in it.
-        let index_of_siblings = sibling_index(&self.folder, &self.photos);
-
-        for index in 0..self.photos.len() {
-            let Some(c) = self.assigned[index] else { continue };
-            let target = self.folder.join(&self.collections[c]);
-
-            if let Err(e) = std::fs::create_dir_all(&target) {
-                report.error = Some(format!("{}: {e}", target.display()));
-                return report;
-            }
-
-            // Everything sharing the stem travels together: the sidecar Zaru
-            // just wrote, and the JPEG if the camera was in RAW+JPEG. Splitting
-            // them would quietly break the pair.
-            for file in siblings(&index_of_siblings, &self.photos[index]) {
-                let Some(name) = file.file_name() else { continue };
-                let destination = target.join(name);
-                if let Err(e) = std::fs::rename(&file, &destination) {
-                    report.error = Some(format!("{}: {e}", file.display()));
-                    return report;
-                }
-                report.files_moved += 1;
-                if file == self.photos[index].path {
-                    self.photos[index].path = destination;
-                }
-            }
-            report.moved += 1;
-        }
-
-        // The assignments have been realised, and no undo can un-move a file.
-        self.assigned = vec![None; self.photos.len()];
-        self.undo.clear();
-        self.redo.clear();
-        report
+        self.apply_selection(None, ApplyOperation::Both, styles).unwrap_or_else(|error| ApplyReport { error: Some(error), ..Default::default() })
     }
 
     /// Writes a sidecar for every marked photo, in each requested naming style.
@@ -572,6 +478,18 @@ impl Session {
 
     fn rewind(&mut self, change: &Change, direction: Direction) -> Vec<usize> {
         match change {
+            Change::Batch { marks, assignments } => {
+                let mut indices = BTreeSet::new();
+                for (i, before, after) in marks {
+                    self.marks[*i] = match direction { Direction::Back => before.clone(), Direction::Forward => after.clone() };
+                    indices.insert(*i);
+                }
+                for (i, before, after) in assignments {
+                    self.assigned[*i] = match direction { Direction::Back => *before, Direction::Forward => *after };
+                    indices.insert(*i);
+                }
+                indices.into_iter().collect()
+            }
             Change::Mark { index, before, after } => {
                 self.marks[*index] = match direction {
                     Direction::Back => before.clone(),
@@ -603,6 +521,7 @@ impl Session {
             index,
             mark: self.marks[index].clone(),
             collection: self.assigned[index],
+            pending_xmp: self.marks[index] != self.saved_marks[index],
         }
     }
 }
@@ -660,24 +579,6 @@ fn siblings(index: &HashMap<String, Vec<PathBuf>>, photo: &Photo) -> Vec<PathBuf
     stem_key(&photo.path)
         .and_then(|key| index.get(&key).cloned())
         .unwrap_or_else(|| vec![photo.path.clone()])
-}
-
-/// What would end up moving: the files already on disk, plus the sidecars Apply
-/// is about to write. Leaving the second group out would undercount the preview
-/// and, worse, miss a collision that only appears once the sidecar exists.
-fn planned_files(
-    photo: &Photo,
-    index: &HashMap<String, Vec<PathBuf>>,
-    mark: &Marks,
-    styles: &[SidecarStyle],
-) -> Vec<PathBuf> {
-    let mut files: BTreeSet<PathBuf> = siblings(index, photo).into_iter().collect();
-    if !mark.is_empty() {
-        for style in styles {
-            files.insert(zaru_xmp::sidecar_path(&photo.path, *style));
-        }
-    }
-    files.into_iter().collect()
 }
 
 /// Splits the pass into bursts by the gap between shutter times.

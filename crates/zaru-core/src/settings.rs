@@ -50,10 +50,14 @@ impl Settings {
     /// Reads the settings file, falling back to defaults for anything missing
     /// or unreadable. A corrupt settings file must never stop the app opening.
     pub fn load(dir: &Path) -> Self {
-        fs::read_to_string(Self::file(dir))
+        let mut settings: Self = fs::read_to_string(Self::file(dir))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if settings.keymap.grid.is_empty() && !settings.keymap.entries().iter().any(|(_, key)| key.eq_ignore_ascii_case("e")) {
+            settings.keymap.grid = "e".into();
+        }
+        settings
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {

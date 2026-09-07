@@ -17,7 +17,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use zaru_core::keymap::ACTIONS;
 use zaru_core::{
-    ApplyPlan, ApplyReport, Frame, Keymap, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    ApplyOperation, BatchEdit, ApplyPlan, Frame, Keymap, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
     SessionView, Settings,
 };
 
@@ -28,6 +28,7 @@ const LABEL: &str = "Green";
 struct AppState {
     session: Mutex<Session>,
     prefetch: Prefetch,
+    thumbnails: Prefetch,
     settings: Mutex<Settings>,
     config_dir: PathBuf,
     /// Set by anything that changes a mark, cleared by a checkpoint. Saving on
@@ -40,6 +41,7 @@ impl AppState {
         AppState {
             session: Mutex::new(Session::default()),
             prefetch: Prefetch::new(),
+            thumbnails: Prefetch::new(),
             settings: Mutex::new(Settings::load(&config_dir)),
             config_dir,
             dirty: AtomicBool::new(false),
@@ -59,7 +61,11 @@ async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
 #[tauri::command]
 fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, String> {
     let mut session = state.session.lock().unwrap();
-    session.open(Path::new(&path))?;
+    if let Err(error) = session.open(Path::new(&path)) {
+        let recovered = Recovery::load(&state.config_dir, Path::new(&path))
+            .map(|saved| session.open_recoverable(Path::new(&path), &saved)).unwrap_or(false);
+        if !recovered { return Err(error); }
+    }
     reload_frames(&state, &session);
     state.dirty.store(false, Ordering::Relaxed);
     Ok(session.view())
@@ -69,6 +75,10 @@ fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, 
 /// again after Apply, because a photo that moved into a collection lives
 /// somewhere else now.
 fn reload_frames(state: &AppState, session: &Session) {
+    state.thumbnails.load(session.photos().iter().map(|photo| {
+        let preview = photo.info.thumbnail.unwrap_or(photo.info.preview);
+        Frame { path: photo.path.clone(), offset: preview.offset, len: preview.len }
+    }).collect());
     state.prefetch.load(
         session
             .photos()
@@ -91,6 +101,17 @@ fn reload_frames(state: &AppState, session: &Session) {
 #[tauri::command]
 fn focus(state: State<'_, AppState>, frames: Vec<usize>) {
     state.prefetch.focus(&frames);
+}
+
+#[tauri::command]
+fn thumbnail_focus(state: State<'_, AppState>, frames: Vec<usize>) {
+    state.thumbnails.focus(&frames);
+}
+
+#[tauri::command]
+fn edit_selection(state: State<'_, AppState>, indices: Vec<usize>, edit: BatchEdit) -> Result<Vec<PhotoChange>, String> {
+    let changes = state.session.lock().unwrap().edit_selection(&indices, edit)?;
+    Ok(touched(&state, changes))
 }
 
 #[tauri::command]
@@ -214,7 +235,7 @@ fn reset_keymap(state: State<'_, AppState>) -> Result<Keymap, String> {
 fn recovery_offer(state: State<'_, AppState>) -> Option<RecoveryOffer> {
     let session = state.session.lock().unwrap();
     Recovery::load(&state.config_dir, session.folder())
-        .filter(|saved| saved.matches(&session.names()))
+        .filter(|saved| saved.valid_for(session.folder()))
         .map(|saved| saved.offer())
 }
 
@@ -222,7 +243,9 @@ fn recovery_offer(state: State<'_, AppState>) -> Option<RecoveryOffer> {
 fn restore_session(state: State<'_, AppState>) -> Option<SessionView> {
     let mut session = state.session.lock().unwrap();
     let saved = Recovery::load(&state.config_dir, session.folder())?;
-    session.restore(saved).then(|| session.view())
+    if !session.restore(saved) { return None; }
+    reload_frames(&state, &session);
+    Some(session.view())
 }
 
 #[tauri::command]
@@ -255,25 +278,29 @@ fn checkpoint(state: State<'_, AppState>) {
 /// What Apply would do. The preview is not decoration: moving files is the only
 /// irreversible thing Zaru does, and it should never be a surprise.
 #[tauri::command]
-fn plan(state: State<'_, AppState>) -> ApplyPlan {
+fn plan(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Option<ApplyOperation>) -> Result<ApplyPlan, String> {
     let styles = state.settings.lock().unwrap().xmp_compat.styles();
-    state.session.lock().unwrap().plan(styles)
+    state.session.lock().unwrap().plan_selection(indices.as_deref(), operation.unwrap_or_default(), styles)
 }
 
 #[tauri::command]
-fn apply(state: State<'_, AppState>) -> ApplyReport {
+fn apply(state: State<'_, AppState>, indices: Option<Vec<usize>>, operation: Option<ApplyOperation>) -> Result<serde_json::Value, String> {
     let styles = state.settings.lock().unwrap().xmp_compat.styles();
     let mut session = state.session.lock().unwrap();
-    let report = session.apply(styles);
+    let report = session.apply_selection(indices.as_deref(), operation.unwrap_or_default(), styles)?;
     // Some photos live in a subfolder now, so the cached byte ranges point at
     // paths that no longer exist.
     reload_frames(&state, &session);
     // The marks are on disk in their real home; the scratch copy has no job.
-    if report.error.is_none() {
+    if !session.has_pending() && report.error.is_none() {
         Recovery::discard(&state.config_dir, session.folder());
         state.dirty.store(false, Ordering::Relaxed);
+    } else if session.snapshot().save(&state.config_dir).is_err() {
+        state.dirty.store(true, Ordering::Relaxed);
     }
-    report
+    let mut value = serde_json::to_value(report).map_err(|e| e.to_string())?;
+    value["session"] = serde_json::to_value(session.view()).map_err(|e| e.to_string())?;
+    Ok(value)
 }
 
 fn main() {
@@ -295,7 +322,8 @@ fn main() {
                 return;
             };
 
-            state.prefetch.fetch(
+            let pool = if request.uri().path().contains("/thumb/") { &state.thumbnails } else { &state.prefetch };
+            pool.fetch(
                 index,
                 Box::new(move |bytes| {
                     responder.respond(match bytes {
@@ -309,6 +337,8 @@ fn main() {
             pick_folder,
             open_folder,
             focus,
+            thumbnail_focus,
+            edit_selection,
             set_star,
             toggle_reject,
             toggle_label,

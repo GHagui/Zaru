@@ -16,6 +16,7 @@ pub use keymap::Keymap;
 pub use prefetch::{Frame, Prefetch};
 pub use recovery::{Recovery, RecoveryOffer};
 pub use session::{
+    ApplyOperation, BatchEdit,
     ApplyPlan, ApplyReport, PhotoChange, PhotoView, PlannedMove, Session, SessionView, WriteReport,
 };
 pub use settings::{Settings, XmpCompat};

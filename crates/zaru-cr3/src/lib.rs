@@ -56,6 +56,7 @@ pub struct Preview {
 #[derive(Clone, Copy, Debug)]
 pub struct Cr3Info {
     pub preview: Preview,
+    pub thumbnail: Option<Preview>,
     /// Exif orientation, 1 through 8. Falls back to 1 when absent.
     pub orientation: u16,
     pub sensor_width: u32,
@@ -130,7 +131,8 @@ impl PreviewSource for Cr3 {
             .map(Ok)
             .unwrap_or_else(|| prvw_preview(&mut r, &top))?;
 
-        Ok(Cr3Info { preview, orientation, sensor_width, sensor_height, captured_ms })
+        let thumbnail = prvw_preview(&mut r, &top).ok();
+        Ok(Cr3Info { preview, thumbnail, orientation, sensor_width, sensor_height, captured_ms })
     }
 }
 
@@ -276,4 +278,3 @@ fn canon_tags<R: Read + Seek>(
     let payload = read_at(r, record.body, (record.end - record.body) as usize)?;
     tiff::ifd0(&payload)
 }
-

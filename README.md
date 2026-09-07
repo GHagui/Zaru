@@ -50,10 +50,10 @@ binário para outro computador.
 | `A` `R` `S` `T` `G` | 1 a 5 estrelas; a mesma tecla zera |
 | `Espaço` | etiqueta verde |
 | `Backspace` | rejeita e avança |
-| `Shift+K` / `Shift+H` | rajada anterior / próxima |
+| `Alt+K` / `Alt+H` | rajada anterior / próxima |
 | `Z` | alterna 1:1 e ajustado |
 | `V` | fixa esta foto para comparar |
-| `F` | filtra o que aparece |
+| `D` | filtra o que aparece |
 | `N` / `M` | nova coleção / mover para uma coleção |
 | `Esc` | volta ao enquadramento inteiro |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | desfaz / refaz |
@@ -83,7 +83,7 @@ decodifica nada, então o gargalo é o decode do JPEG de 6000×4000 pelo WebView
 - **JavaScript** mantém um anel de 9 elementos `<img>` já decodificados via
   `img.decode()`. A tecla só troca qual deles está visível.
 
-A barra inferior mostra a mediana e o p95 do tempo entre a tecla e a pintura,
+A seção Diagnóstico de navegação, em Ajustes, mostra a mediana e o p95 do tempo entre a tecla e a pintura,
 medidos ao vivo. O critério de aceite da Fase 1 é um número, não uma impressão:
 **12,3 ms** medidos numa pasta real, contra um orçamento de 16 ms — um frame a
 60 Hz.
@@ -153,7 +153,7 @@ Quadros com menos de 700 ms entre si são a mesma rajada: uma câmera em disparo
 contínuo põe oitenta milissegundos entre quadros, e apertar o botão de novo
 demora mais que isso.
 
-`Shift+H` e `Shift+K` pulam de rajada em rajada. Numa passada de automobilismo
+`Alt+H` e `Alt+K` pulam de rajada em rajada. Numa passada de automobilismo
 a unidade de decisão é a rajada, não o quadro — você quer *uma* foto daquele
 carro naquela curva, não um veredito sobre as doze.
 
@@ -162,7 +162,7 @@ poria um quadro alheio dentro de um grupo que o usuário depois julga como um.
 
 ## Filtro
 
-`F` restringe a navegação: sem marcação, com nota, 5 estrelas, verde,
+`D` restringe a navegação: sem marcação, com nota, 5 estrelas, verde,
 rejeitadas, em coleção, sem coleção. A segunda passada deixa de ser 1240 fotos.
 
 Um filtro é uma lista de índices, e toda navegação anda por ela. É também por
@@ -253,53 +253,27 @@ arquivo, e tudo depois dele fica intacto.
 
 ## Direção visual
 
-Neobrutalismo, com uma restrição vinda do assunto que manda em tudo o que vem
-depois dela.
+Estúdio escuro: visor neutro `#1c1c1c`, barras em `#242424`, divisórias
+discretas e controles compactos. A foto mantém sua cor, sem bordas, sombras ou
+transições. Archivo variável continua empacotada localmente para uso offline.
 
-O app existe para julgar exposição, foco e cor. **A moldura em volta da foto não
-pode mentir sobre nenhuma das três.** Cinza neutro é a superfície padrão de
-avaliação de imagem exatamente por isso: qualquer tinta no fundo desloca a
-percepção de branco, e qualquer coisa clara em volta faz a sombra parecer mais
-fechada do que é.
+As ferramentas ficam no topo; navegação, estrelas, etiqueta, rejeição,
+comparação e zoom ficam embaixo. Toda ação de triagem está disponível por
+teclado e por controles visíveis, com dicas que acompanham o remapeamento.
+Coleções têm um painel recolhível de 260 px; abaixo de 1100 px ele se sobrepõe
+ao visor e ações secundárias ficam no menu Mais.
 
-Então o visor é cinza neutro puro e nada mais. O neobrutalismo mora na *chrome*
-— barras, chips, painéis — encostada nas bordas da janela, e nunca entra na
-área da imagem. A foto não ganha borda, sombra nem moldura: ela é o conteúdo, o
-resto é o aparelho.
+Diálogos contêm o foco e oferecem botões de fechar/cancelar. Filtros vazios
+continuam selecionados e oferecem Limpar filtro. Esc fecha a recuperação sem
+apagar o rascunho; somente Descartar o remove. Revisar e aplicar apresenta o
+plano antes da gravação e bloqueia interações durante a execução.
 
-Seis cores, três delas semânticas:
-
-```
---visor   #1C1C1C     --green   #00A651
---chrome  #E8E6E1     --reject  #FF3B2F
---ink     #000000     --star    #FFD400
-```
-
-`--ink` é `#000000` de verdade. Neobrutalismo com preto amaciado perde o ponto
-inteiro — a dureza é a linguagem. Borda de 3px, sombra deslocada sem desfoque
-(`5px 5px 0`), `border-radius: 0` em tudo.
-
-Uma família só, **Archivo** variável, empacotada localmente porque o app é
-offline. O eixo de largura faz a hierarquia que normalmente pediria uma segunda
-fonte: contador em 125% de largura e peso 800, interface em 100%, informação
-secundária em 87%. Números sempre em `tabular-nums`, senão o contador dança a
-cada foto e o olho persegue o movimento.
-
-O chip de coleção é colorido por hash do nome, com borda e texto pretos como
-todo o resto. O hash passa por uma avalanche antes de virar matiz: multiplicar
-e somar preserva vizinhança, e punha "porsche" e "ferrari" a sete graus de
-distância — o mesmo rosa duas vezes.
-
-A nota aparece como cinco células duras em vez de estrelas — no peso de borda
-do resto da interface, uma fileira de quadrados preenchidos se lê como nota num
-relance e fala o mesmo vocabulário que todo o resto da barra. Rejeição não
-convive com a nota: as duas disputam o mesmo campo XMP, então o medidor **sai**
-e dá lugar ao chip vermelho.
-
-Movimento: praticamente nenhum. A troca de foto é instantânea, sem fade e sem
-slide — transição ali é latência disfarçada de refinamento. O único movimento
-permitido é a confirmação: a nota ou a etiqueta pisca uma vez, em 110 ms, ao ser
-aplicada. `prefers-reduced-motion` desliga isso.
+`node tools/ui-preview/preview.js` captura os fluxos e executa regressões de
+clique/teclado, filtros vazios, comparação, foco, recuperação e aplicação.
+Também salva prints `before-*` (fontes de HEAD) e `after-*` em 1400×900,
+1024×768 e 800×600, em `target/ui-preview/`. O print de relatório confirma a
+aplicação na ponte simulada antes de capturar o resultado. Os testes de
+interface não substituem uma validação da janela nativa no Windows.
 
 ## Sidecar XMP
 

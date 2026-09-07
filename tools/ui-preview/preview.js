@@ -14,7 +14,7 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "../..");
 const UI = path.join(ROOT, "ui");
-const OUT = path.resolve(process.argv[2] ?? path.join(ROOT, "target", "ui-preview"));
+const OUT = path.resolve(process.argv.slice(2).find(arg => !arg.startsWith("--")) ?? path.join(ROOT, "target", "ui-preview"));
 
 function chromium() {
   for (const where of [
@@ -58,6 +58,7 @@ const marks = photos.map(() => ({ rating: 0, label: null }));
 const assigned = photos.map(() => null);
 const collections = [];
 const defaultKeymap = {
+  grid: "e",
   prev: "k", next: "h",
   star1: "a", star2: "r", star3: "s", star4: "t", star5: "g",
   label: " ", reject: "Backspace",
@@ -67,6 +68,7 @@ const defaultKeymap = {
 };
 let settings = { xmpCompat: "lightroom", keymap: structuredClone(defaultKeymap) };
 const ACTION_LABELS = [
+  ["grid","alternar foto / grade"],
   ["prev","foto anterior"],["next","próxima foto"],
   ["star1","1 estrela"],["star2","2 estrelas"],["star3","3 estrelas"],
   ["star4","4 estrelas"],["star5","5 estrelas"],
@@ -85,6 +87,7 @@ const commands = {
   get_settings: () => settings,
   set_settings: (a) => (settings = a.settings),
   focus: () => {},
+  thumbnail_focus: () => {},
   checkpoint: () => {},
   recovery_offer: () => null,
   restore_session: () => null,
@@ -153,18 +156,64 @@ const commands = {
     rejected: 103, untouched: 753, error: null,
   }),
 };
+const savedMarks = photos.map(() => ({ rating: 0, label: null }));
+const history = [], future = [];
+commands.edit_selection = ({ indices, edit }) => {
+  const unique = [...new Set(indices)];
+  if (unique.some(i => i < 0 || i >= photos.length)) throw new Error("foto inválida");
+  if (edit.kind === "collection" && edit.value !== null && !collections[edit.value]) throw new Error("coleção inválida");
+  const before = unique.map(i => structuredClone(at(i)));
+  for (const i of unique) {
+    if (edit.kind === "rating") marks[i].rating = edit.value;
+    if (edit.kind === "green") marks[i].label = edit.value ? "Green" : null;
+    if (edit.kind === "collection") assigned[i] = edit.value;
+  }
+  const after = unique.map(i => structuredClone(at(i)));
+  if (JSON.stringify(before) !== JSON.stringify(after)) { history.push({ before, after }); future.length = 0; }
+  return after;
+};
+const replay = (from, to, field) => {
+  const step = from.pop(); if (!step) return [];
+  for (const change of step[field]) { marks[change.index] = structuredClone(change.mark); assigned[change.index] = change.collection; }
+  to.push(step); return step[field];
+};
+commands.undo = () => replay(history, future, "before");
+commands.redo = () => replay(future, history, "after");
+const globalPlan = commands.plan, globalApply = commands.apply;
+commands.plan = ({ indices, operation } = {}) => {
+  if (indices == null) return globalPlan();
+  const moves = collections.map((collection, c) => ({ collection, photos: indices.filter(i => assigned[i] === c).length, files: indices.filter(i => assigned[i] === c).length })).filter(m => m.photos);
+  return { evaluated: indices.length, sidecars: operation === "organization" ? 0 : indices.length, rejected: indices.filter(i => marks[i].rating === -1).length, untouched: 0, moves: operation === "xmp" ? [] : moves, blockers: [] };
+};
+commands.apply = ({ indices, operation } = {}) => {
+  if (indices == null) return globalApply();
+  const completedXmp = operation === "organization" ? [] : indices;
+  const completedMoves = operation === "xmp" ? [] : indices.filter(i => assigned[i] !== null);
+  for (const i of completedXmp) savedMarks[i] = structuredClone(marks[i]);
+  for (const i of completedMoves) assigned[i] = null;
+  return { sidecars: completedXmp.length, moved: completedMoves.length, filesMoved: completedMoves.length, rejected: 0, untouched: 0, completedXmp, completedMoves, error: null,
+    session: { ...commands.open_folder(), pendingXmp: marks.map((m,i) => JSON.stringify(m) !== JSON.stringify(savedMarks[i])) } };
+};
 window.__TAURI__ = {
   core: {
-    invoke: async (name, args = {}) => commands[name](args),
+    invoke: async (name, args = {}) => {
+      window.__preview.calls.push({ name, args: structuredClone(args) });
+      return structuredClone(await commands[name](args));
+    },
     convertFileSrc: () => ${JSON.stringify(frameUrl)},
   },
 };
+window.__preview = { commands, calls: [], photos, marks, collections, assigned };
 `;
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium().launch();
-  const page = await browser.newPage({ viewport: { width: 1400, height: 880 } });
+  if (process.argv.includes("--grid-only")) {
+    await require("./grid-verify").verify({ browser, stub: stub(frame()), root: ROOT, out: OUT });
+    await browser.close(); return;
+  }
+  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 
   const problems = [];
   page.on("pageerror", (e) => problems.push(String(e)));
@@ -276,9 +325,13 @@ window.__TAURI__ = {
   await press("Escape");
 
   await page.keyboard.press("Control+Enter");
+  await page.click("#apply-go");
+  await page.waitForSelector("#report:not([hidden])");
   await shot("report");
 
+  await require("./verify").verify({ browser, stub: stub(frame()), root: ROOT, out: OUT });
+  await require("./grid-verify").verify({ browser, stub: stub(frame()), root: ROOT, out: OUT });
   console.log(problems.length ? `\nproblems:\n  ${problems.join("\n  ")}` : "\nno console errors");
   await browser.close();
   process.exitCode = problems.length ? 1 : 0;
-})();
+})().catch(error => { console.error(error); process.exit(1); });

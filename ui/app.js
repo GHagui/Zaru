@@ -111,9 +111,14 @@ const state = {
   byKey: new Map(),
   /// The action waiting to be given a key in the settings screen.
   capturing: null,
+  busy: false,
+  pendingXmp: [],
+  applyRequest: {},
+  collectionCounts: [],
+  returnFocus: null,
 };
 
-const current = () => state.visible[state.at] ?? 0;
+const current = () => state.visible[state.at];
 
 // ---------------------------------------------------------------- ring
 
@@ -156,6 +161,7 @@ function assignSlot(index) {
   }
 
   victim.index = index;
+  victim.el.alt = state.photos[index]?.name ?? "";
   victim.el.src = frameUrl(index);
   place(victim);
   // Decoding ahead of time is the whole point: without it the keypress pays
@@ -163,6 +169,9 @@ function assignSlot(index) {
   victim.el.decode().catch(() => {});
   return victim;
 }
+
+// Reserve one existing ring element for the reference, including when the current photo is the reference.
+const reference = state.slots.pop();
 
 // ------------------------------------------------------------ geometry
 
@@ -234,7 +243,7 @@ function place(slot, role) {
 }
 
 function placeShown() {
-  for (const slot of state.slots) {
+  for (const slot of [...state.slots, reference]) {
     if (slot.box.classList.contains("shown")) place(slot);
   }
 }
@@ -242,11 +251,22 @@ function placeShown() {
 // ------------------------------------------------------------ rendering
 
 function show() {
-  if (!state.photos.length) return;
+  if (window.gridUI?.active) { window.gridUI.render(); renderStatus(); return; }
+  if (!state.visible.length) {
+    for (const slot of [...state.slots, reference]) slot.box.classList.remove("shown");
+    renderStatus();
+    return;
+  }
   const slot = assignSlot(current());
-  const pinnedSlot = state.pinned === null ? null : assignSlot(state.pinned);
+  const pinnedSlot = state.pinned === null ? null : reference;
+  if (pinnedSlot && pinnedSlot.index !== state.pinned) {
+    pinnedSlot.index = state.pinned;
+    pinnedSlot.el.src = frameUrl(state.pinned);
+    pinnedSlot.el.alt = state.photos[state.pinned].name;
+    pinnedSlot.el.decode().catch(() => {});
+  }
 
-  for (const s of state.slots) {
+  for (const s of [...state.slots, reference]) {
     const role = s === pinnedSlot ? "pinned" : s === slot ? "current" : null;
     s.box.classList.toggle("shown", role !== null);
     if (role) place(s, role);
@@ -278,48 +298,55 @@ function renderStatus() {
   const index = current();
   const photo = state.photos[index];
   const mark = state.marks[index];
-  if (!photo) return;
-
-  dom.counter.textContent = `${state.at + 1} / ${state.visible.length}`;
-  dom.name.textContent = photo.name;
-
-  // A burst of one is just a photo, and saying so would be noise.
-  dom.burst.textContent =
-    photo.burstSize > 1 ? `rajada ${photo.burstIndex + 1}/${photo.burstSize}` : "";
-
+  const hasPhoto = !!photo;
+  document.body.classList.toggle("no-results", !!state.photos.length && !hasPhoto);
+  el("no-results").hidden = !state.photos.length || hasPhoto;
+  dom.counter.textContent = `${hasPhoto ? state.at + 1 : 0} / ${state.visible.length}`;
+  dom.name.textContent = photo?.name ?? (state.photos.length ? "Nenhuma foto selecionada" : "Pronto para uma nova seleção");
+  dom.name.title = photo?.name ?? "";
+  dom.burst.textContent = photo?.burstSize > 1 ? `Rajada · ${photo.burstIndex + 1}/${photo.burstSize}` : "";
   dom.filterChip.hidden = state.filter === 0;
-  if (state.filter) {
-    dom.filterChip.textContent = `${FILTERS[state.filter].name} · ${state.photos.length} no total`;
-  }
-
-  const rejected = mark.rating === -1;
-  const stars = rejected ? 0 : mark.rating;
-  // Rejection and rating are one field, so the meter gives way to the chip
-  // rather than sitting next to it claiming zero stars.
-  dom.rating.hidden = rejected;
-  dom.rating.querySelectorAll("i").forEach((cell, i) => {
+  dom.filterChip.textContent = state.filter ? `${FILTERS[state.filter].name} · ${state.visible.length} de ${state.photos.length}` : "";
+  const rejected = mark?.rating === -1;
+  const stars = Math.max(0, mark?.rating ?? 0);
+  dom.rating.querySelectorAll("button").forEach((cell, i) => {
     cell.classList.toggle("on", i < stars);
+    cell.setAttribute("aria-pressed", String(stars === i + 1));
   });
-  dom.reject.hidden = !rejected;
-  dom.label.hidden = !mark.label;
-  if (mark.label) {
-    dom.label.textContent = LABEL_NAMES[mark.label] ?? mark.label.toLowerCase();
-  }
-
+  dom.reject.setAttribute("aria-pressed", String(rejected));
+  dom.reject.textContent = rejected ? "Rejeitada" : "Rejeitar";
+  dom.label.setAttribute("aria-pressed", String(!!mark?.label));
   const collection = state.assigned[index];
   dom.collection.hidden = collection === null || collection === undefined;
   if (!dom.collection.hidden) {
     const name = state.collections[collection];
     dom.collection.textContent = name;
+    dom.collection.title = name;
     dom.collection.style.setProperty("--chip", chipColour(name));
   }
-
-  const native = geometry(photo, pane("current")).native;
-  dom.zoom.hidden = state.view.scale === 1;
-  dom.zoom.textContent = `${Math.round((state.view.scale / native) * 100)}%`;
+  dom.zoom.textContent = hasPhoto && state.view.scale !== 1
+    ? `${Math.round(state.view.scale / geometry(photo, pane("current")).native * 100)}% · Ajustar`
+    : "Ajustar / 100%";
+  const comparing = state.pinned !== null && hasPhoto;
+  dom.divider.hidden = !comparing;
+  dom.pinTag.hidden = !comparing;
+  el("current-tag").hidden = !comparing;
+  dom.pinTag.textContent = comparing ? `Referência · ${state.photos[state.pinned].name}` : "";
+  el("current-tag").textContent = comparing ? `Atual · ${photo.name}` : "";
+  document.querySelectorAll('[data-command="compare"]').forEach(b => b.setAttribute("aria-pressed", String(comparing)));
+  document.querySelectorAll("[data-photo]").forEach(b => b.disabled = !hasPhoto || state.busy);
+  document.querySelectorAll("[data-session]").forEach(b => b.disabled = !state.photos.length || state.busy);
+  document.querySelectorAll('[data-command="prev"]').forEach(b => b.disabled = !hasPhoto || state.at === 0 || state.busy);
+  document.querySelectorAll('[data-command="next"]').forEach(b => b.disabled = !hasPhoto || state.at === state.visible.length - 1 || state.busy);
+  document.querySelectorAll("#sidebar-list [data-collection]").forEach(b => {
+    b.setAttribute("aria-pressed", String(Number(b.dataset.collection) === collection));
+    b.disabled = !hasPhoto || state.busy;
+  });
+  window.gridUI?.renderStatus();
 }
 
 function goto(position, pressedAt) {
+  if (!state.visible.length || state.busy) return;
   const next = Math.max(0, Math.min(state.visible.length - 1, position));
   // At either end the key does nothing, and timing a frame that never changed
   // would quietly flatter the measurement.
@@ -346,6 +373,7 @@ function burstStart(position) {
 /// Going back lands on the start of the current burst first, the way a track
 /// skip does, and only then on the one before it.
 function gotoBurst(direction) {
+  if (!state.visible.length) return;
   const here = burstAt(state.at);
 
   if (direction > 0) {
@@ -371,12 +399,13 @@ function windowOrder() {
   for (let d = 1; d <= BEHIND; d++) {
     if (state.at - d >= 0) out.push(state.visible[state.at - d]);
   }
-  if (state.pinned !== null && !out.includes(state.pinned)) out.unshift(state.pinned);
+  if (state.visible.length && state.pinned !== null && !out.includes(state.pinned)) out.unshift(state.pinned);
   return out;
 }
 
 let focusPending = null;
 function fillRing() {
+  if (window.gridUI?.active) return;
   const frames = windowOrder();
   for (const i of frames) assignSlot(i);
   // Tell the Rust pool which frames to keep, at most once per painted frame.
@@ -476,21 +505,19 @@ async function applyChange(promise, confirmOn) {
   const change = await promise;
   if (!change) return;
   state.marks[change.index] = change.mark;
+  state.pendingXmp[change.index] = change.pendingXmp ?? true;
   state.assigned[change.index] = change.collection;
-  if (change.index !== current()) return;
+  updateCollectionCounts();
   renderStatus();
+  if (change.index !== current()) return;
   flash(confirmOn);
 }
 
-/// Answers "did that register?" without costing time. One pass, under 120ms.
+/// A short static outline confirms a change without animating the photograph.
 function flash(node) {
   if (!node || node.hidden) return;
-  node.classList.remove("flash");
-  void node.offsetWidth;
   node.classList.add("flash");
-  node.addEventListener("animationend", () => node.classList.remove("flash"), {
-    once: true,
-  });
+  setTimeout(() => node.classList.remove("flash"), 120);
 }
 
 /// Undo and redo have to bring the photo they repaired back into view, or the
@@ -501,9 +528,12 @@ async function applyJump(promise) {
   if (!changes?.length) return;
   for (const c of changes) {
     state.marks[c.index] = c.mark;
+    state.pendingXmp[c.index] = c.pendingXmp ?? true;
     state.assigned[c.index] = c.collection;
   }
+  updateCollectionCounts();
   // Land on the first photo the step touched.
+  if (window.gridUI?.active) { window.gridUI.render(); renderStatus(); return; }
   const change = changes[0];
 
   let position = state.visible.indexOf(change.index);
@@ -526,11 +556,14 @@ function adopt(session) {
   state.marks = session.marks;
   state.collections = session.collections;
   state.assigned = session.assigned;
+  state.pendingXmp = session.pendingXmp ?? session.marks.map(() => false);
+  updateCollectionCounts();
 }
 
 async function openFolder(path) {
   const session = await invoke("open_folder", { path });
   adopt(session);
+  window.gridUI?.reset();
   state.filter = 0;
   state.pinned = null;
   state.at = 0;
@@ -540,28 +573,33 @@ async function openFolder(path) {
   dom.pinTag.hidden = true;
   rebuildVisible(0);
 
-  for (const slot of state.slots) {
+  for (const slot of [...state.slots, reference]) {
     slot.index = null;
     slot.el.removeAttribute("src");
     slot.box.classList.remove("shown");
   }
-  dom.folder.textContent = session.folder;
+  dom.folder.textContent = session.folder.split(/[\\\\/]/).filter(Boolean).pop();
+  dom.folder.title = session.folder;
   dom.empty.hidden = true;
   document.body.classList.remove("idle");
   samples.length = 0;
   show();
   fillRing();
-  offerRecovery();
+  dom.stage.focus();
+  await offerRecovery();
 }
 
 async function pickFolder() {
-  const path = await invoke("pick_folder");
-  if (!path) return;
+  if (state.busy) return;
+  setBusy(true, "Abrindo pasta…");
   try {
+    const path = await invoke("pick_folder");
+    if (!path) return;
     await openFolder(path);
   } catch (e) {
-    dom.empty.hidden = false;
-    dom.emptyMsg.textContent = String(e);
+    notifyUser(`Não foi possível abrir a pasta: ${e}`, true);
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -575,11 +613,6 @@ function rebuildVisible(keepIndex) {
   for (let i = 0; i < state.photos.length; i++) {
     if (test(state.marks[i], state.assigned[i] ?? null)) state.visible.push(i);
   }
-  if (!state.visible.length) {
-    // A filter that hides everything is a dead end, so it does not get applied.
-    state.filter = 0;
-    state.visible = state.photos.map((_, i) => i);
-  }
   const exact = state.visible.indexOf(keepIndex);
   state.at =
     exact >= 0
@@ -590,6 +623,7 @@ function rebuildVisible(keepIndex) {
 function setFilter(which) {
   state.filter = which;
   rebuildVisible(current());
+  window.gridUI?.filterChanged();
   clampPan();
   show();
   fillRing();
@@ -610,7 +644,12 @@ function startFilter() {
     if (i === state.filter) label.className = "chosen";
     const tally = document.createElement("b");
     tally.textContent = count === 1 ? "1 foto" : `${count} fotos`;
-    li.append(key, label, tally);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(i === state.filter));
+    button.append(key, label, tally);
+    button.addEventListener("click", () => { closeModal(); setFilter(i); });
+    li.append(button);
     dom.filterList.append(li);
   });
   openModal("filter");
@@ -629,10 +668,13 @@ function startNewCollection() {
 }
 
 async function confirmNewCollection() {
+  if (state.busy) return;
+  setBusy(true);
   try {
     state.collections = await invoke("new_collection", {
       name: dom.collectionName.value,
     });
+    updateCollectionCounts();
     closeModal();
     // Straight into the picker: creating a collection is nearly always the
     // first half of putting this photo in it.
@@ -641,6 +683,8 @@ async function confirmNewCollection() {
     dom.collectionError.textContent = String(e);
     dom.collectionError.hidden = false;
     dom.collectionName.focus();
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -652,7 +696,7 @@ function startMove() {
     const li = document.createElement("li");
     const p = document.createElement("span");
     p.className = "none";
-    p.textContent = "Nenhuma coleção ainda. Aperte N para criar a primeira.";
+    p.textContent = "Nenhuma coleção ainda. Crie a primeira para organizar suas fotos.";
     li.append(p);
     dom.moveList.append(li);
   } else {
@@ -676,7 +720,11 @@ function startMove() {
       count.textContent = counts[c] === 1 ? "1 foto" : `${counts[c]} fotos`;
       if (!counts[c]) count.textContent = "";
 
-      li.append(key, label, count);
+      const button = document.createElement("button");
+      button.append(key, label, count);
+      button.setAttribute("aria-pressed", String(state.assigned[current()] === c));
+      button.addEventListener("click", () => chooseCollection(c).catch(reportError));
+      li.append(button);
       dom.moveList.append(li);
     });
   }
@@ -684,8 +732,13 @@ function startMove() {
 }
 
 function chooseCollection(collection) {
+  if (window.gridUI?.active) {
+    closeModal();
+    return window.gridUI.edit({ kind: "collection", value: collection });
+  }
+  if (!state.visible.length || state.busy) return Promise.resolve();
   closeModal();
-  applyChange(
+  return applyChange(
     invoke("assign", { index: current(), collection }),
     dom.collection,
   );
@@ -708,10 +761,9 @@ function assignTo(collection, wholeBurst) {
   const index = current();
   const target = state.assigned[index] === collection ? null : collection;
   if (!wholeBurst) {
-    applyChange(invoke("assign", { index, collection: target }), dom.collection);
-    return;
+    return applyChange(invoke("assign", { index, collection: target }), dom.collection);
   }
-  applyMany(invoke("assign_burst", { index, collection: target }));
+  return applyMany(invoke("assign_burst", { index, collection: target }));
 }
 
 /// Applies a change that touched several photos at once, without moving.
@@ -720,19 +772,17 @@ async function applyMany(promise) {
   if (!changes?.length) return;
   for (const change of changes) {
     state.marks[change.index] = change.mark;
+    state.pendingXmp[change.index] = change.pendingXmp ?? true;
     state.assigned[change.index] = change.collection;
   }
+  updateCollectionCounts();
   renderStatus();
   flash(dom.collection);
 }
 
 /// A collection key pressed before that collection exists.
 function flashCollectionHint(which) {
-  dom.collection.hidden = false;
-  dom.collection.textContent = `coleção ${which + 1} não existe`;
-  dom.collection.style.setProperty("--chip", "var(--chrome)");
-  flash(dom.collection);
-  setTimeout(renderStatus, 900);
+  notifyUser(`A coleção ${which + 1} ainda não existe. Abra Coleções para criar uma.`);
 }
 
 // ---------------------------------------------------------------- apply
@@ -753,9 +803,15 @@ function tallyRow(into, count, what, note) {
 
 /// Shows what Apply would do before it does any of it. Moving files is the one
 /// irreversible thing in the app, and it should never be a surprise.
-async function openApply() {
-  const plan = await invoke("plan");
+async function openApply(operation = "both", indices = null) {
+  if (state.busy || !state.photos.length) return;
+  setBusy(true, "Preparando revisão…");
+  let plan;
+  state.applyRequest = { operation, indices: indices === null ? null : [...indices] };
+  try { plan = await invoke("plan", state.applyRequest); } finally { setBusy(false); }
   state.plan = plan;
+  const scope = indices === null ? "Sessão inteira" : `${indices.length} fotos selecionadas`;
+  el("apply-scope").textContent = `${scope} · ${operation === "xmp" ? "Gravar notas e etiquetas, sem mover arquivos." : operation === "organization" ? "Mover CR3 e acompanhantes existentes. Marcações não gravadas continuam pendentes." : "Gravar XMP e aplicar organização."}`;
 
   dom.applyBody.replaceChildren();
   tallyRow(dom.applyBody, plan.evaluated, "fotos avaliadas");
@@ -785,14 +841,29 @@ async function openApply() {
 }
 
 async function confirmApply() {
-  if (state.plan?.blockers?.length) return;
+  if (state.busy || !state.plan || state.plan.blockers.length) return;
+  setBusy(true, "Aplicando alterações…");
+  let report;
+  try {
+    report = await invoke("apply", state.applyRequest);
+  } catch (e) {
+    reportError(e);
+    return;
+  } finally {
+    setBusy(false);
+  }
   closeModal();
-
-  const report = await invoke("apply");
   // The assignments were consumed by the run; the collections stay, so a
   // second pass can sort into the same folders.
-  state.assigned = state.assigned.map(() => null);
+  if (report.session) adopt(report.session);
+  else if (!report.error && state.applyRequest.operation !== "xmp") {
+    const done = new Set(state.applyRequest.indices ?? state.photos.map((_, i) => i));
+    state.assigned = state.assigned.map((value, i) => done.has(i) ? null : value);
+  }
+  window.gridUI?.invalidate();
+  updateCollectionCounts();
   rebuildVisible(current());
+  window.gridUI?.filterChanged();
   show();
 
   dom.reportTitle.textContent = report.error ? "Aplicação interrompida" : "Aplicado";
@@ -826,32 +897,51 @@ async function offerRecovery() {
 }
 
 async function restoreSession() {
-  closeModal();
-  const session = await invoke("restore_session");
-  if (!session) return;
-  adopt(session);
-  rebuildVisible(current());
-  show();
-  fillRing();
+  if (state.busy) return;
+  setBusy(true, "Restaurando sessão…");
+  try {
+    const session = await invoke("restore_session");
+    if (!session) throw new Error("O rascunho não está mais disponível para esta pasta.");
+    adopt(session);
+    rebuildVisible(current());
+    closeModal();
+    show();
+    fillRing();
+  } finally { setBusy(false); }
 }
 
-function discardRecovery() {
-  invoke("discard_recovery").catch(() => {});
+async function discardRecovery() {
+  if (state.busy) return;
+  setBusy(true);
+  try { await invoke("discard_recovery"); closeModal(); }
+  finally { setBusy(false); }
 }
 
 // ---------------------------------------------------------------- modals
 
 function openModal(which) {
+  const trigger = state.returnFocus ?? document.activeElement;
   closeModal();
+  state.returnFocus = trigger;
   state.modal = which;
   dom[which].hidden = false;
+  el("backdrop").hidden = false;
+  document.querySelectorAll("body > header, body > main, body > footer, body > aside").forEach(n => n.inert = true);
+  const initial = which === "newCollection" ? dom.collectionName
+    : which === "apply" ? (dom.applyGo.disabled ? dom[which].querySelector("[data-close]") : dom.applyGo)
+    : dom[which].querySelector("button:not([disabled]), input, [tabindex]");
+  (initial ?? dom[which]).focus();
 }
 
 function closeModal() {
-  if (state.modal === "recovery") discardRecovery();
+  if (state.capturing) stopCapture();
   if (state.modal) dom[state.modal].hidden = true;
   state.modal = null;
-  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  el("backdrop").hidden = true;
+  document.querySelectorAll("body > header, body > main, body > footer, body > aside").forEach(n => n.inert = false);
+  const trigger = state.returnFocus;
+  state.returnFocus = null;
+  if (trigger instanceof HTMLElement && trigger.isConnected && !trigger.closest("[hidden]") && !trigger.disabled) trigger.focus();
 }
 
 /// Keys a modal claims for itself. A mode with no entry here swallows
@@ -868,18 +958,21 @@ function pickedRow(e, rows) {
 
 const MODAL_KEYS = {
   move(e) {
+    if (normalise(e.key) === normalise(state.keymap.newCollection)) {
+      e.preventDefault();
+      return startNewCollection();
+    }
     const row = pickedRow(e, state.collections.length);
     if (row >= 0) {
       e.preventDefault();
-      chooseCollection(row);
+      chooseCollection(row).catch(reportError);
       return;
     }
     // The same key that opens the list clears the collection, so taking a photo
     // out never needs a key of its own.
     if (normalise(e.key) === normalise(state.keymap?.moveTo ?? "m")) {
       e.preventDefault();
-      closeModal();
-      applyChange(invoke("assign", { index: current(), collection: null }), dom.collection);
+      executeAction("unassign").catch(reportError);
     }
   },
   filter(e) {
@@ -893,13 +986,13 @@ const MODAL_KEYS = {
   apply(e) {
     if (e.key === "Enter") {
       e.preventDefault();
-      confirmApply();
+      confirmApply().catch(reportError);
     }
   },
   recovery(e) {
     if (e.key === "Enter") {
       e.preventDefault();
-      restoreSession();
+      restoreSession().catch(reportError);
     }
   },
 };
@@ -913,7 +1006,7 @@ function normalise(key) {
 function adoptKeymap(keymap) {
   state.keymap = keymap;
   state.byKey = new Map();
-  const bind = (key, action) => state.byKey.set(normalise(key), action);
+  const bind = (key, action) => { if (key) state.byKey.set(normalise(key), action); };
 
   for (const [action, key] of Object.entries(keymap)) {
     if (action === "collections") continue;
@@ -923,6 +1016,8 @@ function adoptKeymap(keymap) {
 
   renderKeymapEditor();
   renderHelp();
+  renderShortcutHints();
+  renderCollections();
 }
 
 /// The label for an action, including the collections, which are numbered
@@ -1005,7 +1100,7 @@ async function loadSettings() {
       if (input.checked) {
         invoke("set_settings", {
           settings: { xmpCompat: input.value, keymap: state.keymap },
-        }).catch(() => {});
+        }).catch(reportError);
       }
     });
   }
@@ -1025,6 +1120,8 @@ function renderHelp() {
   };
 
   const k = state.keymap;
+  row(showKey(k.grid || "sem atalho"), "alterna foto / grade");
+  row("Ctrl+A · Ctrl+Espaço · Shift+setas", "na grade: selecionar todas, alternar seleção, selecionar intervalo");
   row(showKey(k.prev), "foto anterior");
   row(showKey(k.next), "próxima foto");
   row(`Alt+${showKey(k.prev)} / Alt+${showKey(k.next)}`, "rajada anterior / próxima");
@@ -1051,127 +1148,95 @@ function renderHelp() {
 
 // -------------------------------------------------------------- keyboard
 
-document.addEventListener("keydown", (e) => {
-  // `event.key`, never `event.code`: with Colemak-DH in the OS, the R key
-  // reports `KeyS`, because that is its QWERTY position.
-  const key = normalise(e.key);
+async function executeAction(action, whole = false) {
+  if (state.busy) return;
+  switch (action) {
+    case "grid": return window.gridUI?.toggle();
+    case "photo": return window.gridUI?.toggle(false);
+    case "open": return pickFolder();
+    case "settings": return openModal("settings");
+    case "help": return openModal("help");
+    case "clearFilter": return setFilter(0);
+    case "collections": return toggleCollections();
+  }
+  if (!state.photos.length) return;
+  if (window.gridUI?.active && window.gridUI.actions.has(action)) return window.gridUI.action(action);
+  switch (action) {
+    case "apply": return openApply();
+    case "filter": return startFilter();
+    case "newCollection": return startNewCollection();
+    case "moveTo": return startMove();
+    case "undo": return applyJump(invoke("undo"));
+    case "redo": return applyJump(invoke("redo"));
+  }
+  if (!state.visible.length) return;
+  const index = current();
+  const collection = action?.match(/^collection(\d+)$/);
+  if (collection) {
+    const which = Number(collection[1]) - 1;
+    if (which >= state.collections.length) return flashCollectionHint(which);
+    return assignTo(which, whole);
+  }
+  switch (action) {
+    case "next": return whole ? gotoBurst(1) : goto(state.at + 1, performance.now());
+    case "prev": return whole ? gotoBurst(-1) : goto(state.at - 1, performance.now());
+    case "zoom": return toggleNative();
+    case "compare": return togglePin();
+    case "label": return applyChange(invoke("toggle_label", { index }), dom.label);
+    case "reject": {
+      const change = applyChange(invoke("toggle_reject", { index }), dom.reject);
+      goto(state.at + 1);
+      return change;
+    }
+    case "unassign":
+      closeModal();
+      return applyChange(invoke("assign", { index, collection: null }), dom.collection);
+  }
+  const star = action?.match(/^star(\d)$/);
+  if (star) return applyChange(invoke("set_star", { index, stars: Number(star[1]) }), dom.rating);
+}
 
+document.addEventListener("keydown", (e) => {
+  if (state.busy) { e.preventDefault(); return; }
+  const key = normalise(e.key);
   if (state.modal) {
-    // A row waiting for a key takes the very next one, whatever it is.
     if (state.capturing) {
       e.preventDefault();
       if (e.key === "Escape") return stopCapture();
       if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
-      return void captureKey(e.key);
+      return void captureKey(e.key).catch(reportError);
     }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeModal();
+    if (e.key === "Escape") { e.preventDefault(); closeModal(); return; }
+    if (e.key === "Tab") {
+      const focusable = [...dom[state.modal].querySelectorAll('button:not([disabled]), input:not([disabled]), summary, [tabindex="0"]')].filter(n => n.getClientRects().length);
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
       return;
     }
+    // Let native controls activate themselves; Enter on Cancel must never apply.
+    if ((e.key === "Enter" || e.key === " ") && e.target.closest("button, summary, input")) return;
     MODAL_KEYS[state.modal]?.(e);
     return;
   }
-
-  // Undo and apply are the two things that stay on their conventional keys:
-  // they are not culling actions, and Ctrl+Z means Ctrl+Z everywhere.
+  if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+  if (window.gridUI?.active && window.gridUI.keydown(e)) return;
   if (e.ctrlKey || e.metaKey) {
-    if (key === "z") {
-      e.preventDefault();
-      applyJump(invoke(e.shiftKey ? "redo" : "undo"));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      openApply();
-    }
+    const action = key === "z" ? (e.shiftKey ? "redo" : "undo") : e.key === "Enter" ? "apply" : null;
+    if (action) { e.preventDefault(); executeAction(action).catch(reportError); }
     return;
   }
-
-  const action = state.byKey.get(key);
-
-  switch (action) {
-    case "open":
-      e.preventDefault();
-      pickFolder();
-      return;
-    case "settings":
-      e.preventDefault();
-      openModal("settings");
-      return;
-    case "help":
-      e.preventDefault();
-      openModal("help");
-      return;
-  }
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest("button, summary")) return;
   if (e.key === "Escape") {
     e.preventDefault();
+    el("more-actions").open = false;
     resetView();
     return;
   }
-
-  if (!state.photos.length || !action) return;
-  const index = current();
-  const whole = e[BURST_MODIFIER];
-
-  const collection = action.match(/^collection(\d+)$/);
-  if (collection) {
-    e.preventDefault();
-    const which = Number(collection[1]) - 1;
-    // A key for a collection that has not been created yet says so rather than
-    // doing nothing, which would read as a dropped keystroke.
-    if (which >= state.collections.length) return void flashCollectionHint(which);
-    return void assignTo(which, whole);
-  }
-
-  switch (action) {
-    case "next":
-      e.preventDefault();
-      if (whole) gotoBurst(1);
-      else goto(state.at + 1, performance.now());
-      return;
-    case "prev":
-      e.preventDefault();
-      if (whole) gotoBurst(-1);
-      else goto(state.at - 1, performance.now());
-      return;
-    case "zoom":
-      e.preventDefault();
-      toggleNative();
-      return;
-    case "compare":
-      e.preventDefault();
-      togglePin();
-      return;
-    case "filter":
-      e.preventDefault();
-      startFilter();
-      return;
-    case "newCollection":
-      e.preventDefault();
-      startNewCollection();
-      return;
-    case "moveTo":
-      e.preventDefault();
-      startMove();
-      return;
-    case "label":
-      e.preventDefault();
-      applyChange(invoke("toggle_label", { index }), dom.label);
-      return;
-    case "reject":
-      e.preventDefault();
-      // Rejection is the only mark that advances, because it is terminal:
-      // there is nothing else to decide about this frame.
-      applyChange(invoke("toggle_reject", { index }), dom.reject);
-      goto(state.at + 1);
-      return;
-  }
-
-  const star = action.match(/^star(\d)$/);
-  if (star) {
-    e.preventDefault();
-    // A rating never advances. The user rates, looks again, then moves on.
-    applyChange(invoke("set_star", { index, stars: Number(star[1]) }), dom.rating);
-  }
+  const action = state.byKey.get(key);
+  if (!action) return;
+  e.preventDefault();
+  executeAction(action, e[BURST_MODIFIER]).catch(reportError);
 });
 
 // ----------------------------------------------------------------- mouse
@@ -1181,7 +1246,7 @@ dom.stage.addEventListener("contextmenu", (e) => e.preventDefault());
 dom.stage.addEventListener(
   "wheel",
   (e) => {
-    if (state.modal || !state.photos.length) return;
+    if (state.modal || state.busy || window.gridUI?.active || !state.visible.length) return;
     e.preventDefault();
     const box = pane("current");
     const step = Math.exp(-e.deltaY / 400);
@@ -1196,7 +1261,7 @@ dom.stage.addEventListener(
 
 let drag = null;
 dom.stage.addEventListener("pointerdown", (e) => {
-  if (state.modal || !state.photos.length || e.button !== 0) return;
+  if (state.modal || state.busy || window.gridUI?.active || !state.visible.length || e.button !== 0 || e.target.closest("button, .card")) return;
   drag = { x: e.clientX, y: e.clientY, moved: false };
   dom.stage.setPointerCapture(e.pointerId);
   document.body.classList.add("dragging");
@@ -1224,17 +1289,159 @@ for (const end of ["pointerup", "pointercancel"]) {
 }
 
 dom.stage.addEventListener("dblclick", (e) => {
-  if (state.modal || !state.photos.length) return;
+  if (state.modal || state.busy || window.gridUI?.active || !state.visible.length || e.target.closest("button, .card")) return;
   e.preventDefault();
   toggleNative();
 });
 
 // ----------------------------------------------------------------- setup
 
-el("open").addEventListener("click", pickFolder);
-el("config").addEventListener("click", () => openModal("settings"));
-dom.applyGo.addEventListener("click", confirmApply);
-dom.recoveryGo.addEventListener("click", restoreSession);
+let noticeTimer;
+let noticeKind = null;
+let disabledBeforeBusy = new Map();
+
+function notifyUser(message, error = false) {
+  clearTimeout(noticeTimer);
+  noticeKind = error ? "error" : "message";
+  el("notice").textContent = message;
+  el("notice").hidden = false;
+  noticeTimer = setTimeout(() => { el("notice").hidden = true; }, error ? 12000 : 5000);
+}
+
+function reportError(error) {
+  notifyUser(String(error), true);
+}
+
+function setBusy(busy, message) {
+  state.busy = busy;
+  document.body.setAttribute("aria-busy", String(busy));
+  if (busy) {
+    disabledBeforeBusy = new Map();
+    document.querySelectorAll("button, input").forEach(button => {
+      disabledBeforeBusy.set(button, button.disabled);
+      button.disabled = true;
+    });
+    if (message) {
+      clearTimeout(noticeTimer);
+      noticeKind = "busy";
+      el("notice").textContent = message;
+      el("notice").hidden = false;
+    }
+  } else {
+    for (const [button, disabled] of disabledBeforeBusy) button.disabled = disabled;
+    disabledBeforeBusy.clear();
+    if (noticeKind === "busy") el("notice").hidden = true;
+  }
+  renderStatus();
+  if (!busy && state.modal && !dom[state.modal].contains(document.activeElement)) {
+    dom[state.modal].querySelector("button:not([disabled]), input:not([disabled])")?.focus();
+  }
+}
+
+function updateCollectionCounts() {
+  state.collectionCounts = state.collections.map(() => 0);
+  for (const assigned of state.assigned) {
+    if (assigned !== null && assigned !== undefined) state.collectionCounts[assigned]++;
+  }
+  renderCollections();
+}
+
+function renderCollections() {
+  const list = el("sidebar-list");
+  const focusedCollection = document.activeElement.closest?.("#sidebar-list [data-collection]")?.dataset.collection;
+  list.replaceChildren();
+  if (!state.collections.length) {
+    const message = document.createElement("p");
+    message.className = "muted";
+    message.textContent = "Sua seleção começa aqui. Crie uma coleção para agrupar as fotos.";
+    list.append(message);
+  }
+  state.collections.forEach((name, index) => {
+    const button = document.createElement("button");
+    button.className = "collection-row";
+    button.dataset.collection = index;
+    button.dataset.photo = "";
+    button.dataset.command = `collection${index + 1}`;
+    button.disabled = !state.visible.length || state.busy;
+    button.setAttribute("aria-pressed", String(state.assigned[current()] === index));
+    button.title = `${name} · Alt + clique atribui a rajada inteira`;
+    button.style.setProperty("--chip", chipColour(name));
+    const key = document.createElement("kbd");
+    key.textContent = showKey(pickerKey(index));
+    const label = document.createElement("span");
+    label.className = "collection-name";
+    label.textContent = name;
+    const count = document.createElement("small");
+    count.textContent = state.collectionCounts[index] ?? 0;
+    button.append(key, label, count);
+    list.append(button);
+  });
+  if (focusedCollection !== undefined && !state.modal) {
+    list.querySelector(`[data-collection="${focusedCollection}"]`)?.focus();
+  }
+}
+
+function toggleCollections() {
+  const open = el("collections-sidebar").hidden;
+  el("collections-sidebar").hidden = !open;
+  document.body.classList.toggle("collections-open", open);
+  document.querySelectorAll('[data-command="collections"]').forEach(button => button.setAttribute("aria-expanded", String(open)));
+  renderStatus();
+  if (!open) document.querySelector('nav [data-command="collections"]').focus();
+}
+
+function renderShortcutHints() {
+  document.querySelectorAll("[data-command]").forEach(button => {
+    const action = button.dataset.command;
+    const key = state.keymap[action];
+    if (typeof key !== "string") return;
+    button.title = `${button.getAttribute("aria-label") ?? button.textContent.trim()} · ${showKey(key)}`;
+    button.setAttribute("aria-keyshortcuts", key === " " ? "Space" : key);
+  });
+  document.querySelectorAll("[data-key]").forEach(cap => cap.textContent = showKey(state.keymap[cap.dataset.key]));
+}
+
+function initInterface() {
+  dom.stage.tabIndex = -1;
+  document.querySelectorAll(".panel").forEach(panel => {
+    const heading = panel.querySelector("h2");
+    heading.id ||= `${panel.id}-title`;
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", heading.id);
+    panel.tabIndex = -1;
+    const close = document.createElement("button");
+    close.className = "panel-close";
+    close.dataset.close = "";
+    close.setAttribute("aria-label", "Fechar diálogo");
+    close.textContent = "×";
+    panel.append(close);
+    const cancel = document.createElement("button");
+    cancel.dataset.close = "";
+    cancel.textContent = ["apply", "newCollection", "filter", "move"].includes(panel.id) ? "Cancelar" : "Fechar";
+    const actions = document.createElement("div");
+    actions.className = "dialog-actions";
+    actions.append(cancel);
+    panel.append(actions);
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-command], [data-close]");
+    if (!button || button.disabled || state.busy) return;
+    if (button.hasAttribute("data-close")) return closeModal();
+    el("more-actions").open = false;
+    executeAction(button.dataset.command, event.altKey).catch(reportError);
+  });
+  document.querySelector(".brand").addEventListener("click", event => {
+    event.preventDefault();
+    if (!state.busy) executeAction("help").catch(reportError);
+  });
+  renderStatus();
+}
+
+dom.applyGo.addEventListener("click", () => confirmApply().catch(reportError));
+dom.recoveryGo.addEventListener("click", () => restoreSession().catch(reportError));
+el("recovery-discard").addEventListener("click", () => discardRecovery().catch(reportError));
+el("collection-create").addEventListener("click", confirmNewCollection);
 
 dom.keymapReset.addEventListener("click", async () => {
   stopCapture();
@@ -1252,8 +1459,10 @@ dom.collectionName.addEventListener("keydown", (e) => {
 new ResizeObserver(() => {
   clampPan();
   placeShown();
+  renderStatus();
 }).observe(dom.stage);
 
 setInterval(() => invoke("checkpoint").catch(() => {}), CHECKPOINT_MS);
 
-loadSettings();
+initInterface();
+loadSettings().catch(reportError);

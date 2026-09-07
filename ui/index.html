@@ -8,38 +8,81 @@
 </head>
 <body class="idle">
   <header class="bar bar-top">
+    <a class="brand" href="#" aria-label="Sobre o Zaru e atalhos">zaru<span> / </span></a>
     <span id="folder" class="folder">Zaru</span>
-    <span id="filter-chip" class="chip chip-filter" hidden></span>
-    <span id="burst" class="burst"></span>
-    <span id="counter" class="counter"></span>
+    <nav aria-label="Ferramentas da sessão">
+      <div class="mode-switch" role="group" aria-label="Visualização"><button data-command="photo" data-session aria-pressed="true">Foto</button><button data-command="grid" data-session aria-pressed="false">Grade</button></div>
+      <button data-command="open">Abrir pasta</button>
+      <button data-command="filter" data-session>Filtros</button>
+      <button data-command="collections" data-session aria-expanded="false" aria-controls="collections-sidebar">Coleções</button>
+      <div class="secondary-actions">
+        <button data-command="help">Ajuda</button>
+        <button id="config" data-command="settings">Ajustes</button>
+      </div>
+      <details id="more-actions">
+        <summary aria-label="Mais ferramentas">Mais</summary>
+        <div><button data-command="help">Ajuda</button><button data-command="settings">Ajustes</button></div>
+      </details>
+      <button class="primary" data-command="apply" data-session>Revisar e aplicar <span class="shortcut">Ctrl ↵</span></button>
+    </nav>
   </header>
 
+  <aside id="collections-sidebar" hidden aria-labelledby="collections-title">
+    <div class="sidebar-heading"><h2 id="collections-title">Coleções</h2><button data-command="collections" aria-label="Fechar coleções">×</button></div>
+    <p class="muted">Organize esta passada. Os arquivos só mudam de pasta ao aplicar.</p>
+    <button data-command="newCollection" data-session class="wide">+ Nova coleção</button>
+    <div id="sidebar-list" class="collection-list"></div>
+    <button data-command="unassign" data-photo class="wide">Remover atribuição</button>
+    <p class="muted sidebar-tip">Alt + clique atribui a rajada inteira.</p>
+  </aside>
+
   <main id="stage">
+    <section id="grid-view" hidden aria-label="Grade de fotos">
+      <div class="grid-toolbar"><div><strong id="selection-count" aria-live="polite">0 selecionadas</strong><span id="grid-total" class="muted"></span></div><div class="grid-actions"><button data-command="selectAll">Selecionar todas</button><button data-command="clearSelection">Limpar seleção</button></div></div>
+      <div id="grid-scroll" tabindex="0" role="grid" aria-label="Fotos — clique seleciona; Shift seleciona intervalo"><div id="grid-content"></div></div>
+      <div class="grid-apply"><span class="muted">Clique seleciona · Shift seleciona intervalo · Duplo clique abre</span><button data-command="applyXmp" data-selection>Gravar XMP</button><button data-command="applyOrganization" data-selection class="primary">Aplicar organização</button></div>
+    </section>
     <div id="ring"></div>
     <div id="divider" hidden></div>
     <span id="pin-tag" class="pane-tag" hidden>fixada</span>
+    <span id="current-tag" class="pane-tag current-tag" hidden></span>
+    <button id="filter-chip" class="chip chip-filter" data-command="filter" hidden></button>
 
     <div id="empty" class="card">
-      <h1>Zaru</h1>
-      <p id="empty-msg">Abra uma pasta com arquivos CR3.</p>
-      <button id="open">Abrir pasta</button>
-      <p class="hint">ou aperte <kbd>O</kbd></p>
+      <span class="eyebrow">SEU OLHAR. SUA SELEÇÃO.</span>
+      <h1>Menos fotos.<br>Mais intenção.</h1>
+      <p id="empty-msg">Encontre as fotos que valem ficar. Abra uma pasta com arquivos Canon CR3 para começar.</p>
+      <button id="open" class="primary" data-command="open">Abrir pasta <kbd data-key="open">o</kbd></button>
+      <div class="intro-steps"><span><b>01</b> Avalie</span><span><b>02</b> Organize</span><span><b>03</b> Aplique</span></div>
+      <p class="muted">Prévia instantânea. Atalhos no seu ritmo.<br>As decisões ficam na sessão até você aplicar.</p>
     </div>
+    <div id="no-results" class="card" hidden><h2>Nenhuma foto neste filtro</h2><p>Escolha outro filtro para continuar a seleção.</p><button data-command="clearFilter" class="primary">Limpar filtro</button></div>
   </main>
 
   <footer class="bar bar-bottom">
-    <div id="rating" class="meter" aria-label="nota">
-      <i></i><i></i><i></i><i></i><i></i>
+    <div class="photo-info"><span id="name" class="name">Pronto para uma nova seleção</span><span id="burst" class="burst muted"></span></div>
+    <div class="navigation control-group">
+      <button data-command="prev" data-photo aria-label="Foto anterior">‹</button>
+      <span id="counter" class="counter">—</span>
+      <button data-command="next" data-photo aria-label="Próxima foto">›</button>
     </div>
-    <span id="reject" class="chip chip-reject" hidden>rejeitada</span>
-    <span id="label" class="chip chip-green" hidden>verde</span>
-    <span id="name" class="name"></span>
-    <span class="spacer"></span>
+    <div id="rating" class="meter control-group" role="group" aria-label="Classificação">
+      <button data-command="star1" data-photo aria-label="1 estrela">★</button><button data-command="star2" data-photo aria-label="2 estrelas">★</button><button data-command="star3" data-photo aria-label="3 estrelas">★</button><button data-command="star4" data-photo aria-label="4 estrelas">★</button><button data-command="star5" data-photo aria-label="5 estrelas">★</button>
+    </div>
+    <div class="decisions control-group">
+      <button id="label" data-command="label" data-photo aria-pressed="false"><span class="green-dot"></span> Verde</button>
+      <button id="reject" data-command="reject" data-photo aria-pressed="false">Rejeitar</button>
+    </div>
+    <details id="batch-clear" hidden><summary>Limpar</summary><div><button data-command="clearRating" data-selection>Limpar nota / rejeição</button><button data-command="clearGreen" data-selection>Remover verde</button></div></details>
     <span id="collection" class="chip chip-collection" hidden></span>
-    <span id="zoom" class="zoom" hidden></span>
-    <span id="latency" class="latency" title="tempo entre a tecla e a pintura"></span>
-    <button id="config">Ajustes</button>
+    <div class="view-controls control-group">
+      <button data-command="compare" data-photo aria-pressed="false">Comparar</button>
+      <button id="zoom" data-command="zoom" data-photo>Ajustar / 100%</button>
+    </div>
   </footer>
+
+  <div id="backdrop" hidden></div>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
 
   <div id="recovery" class="panel" hidden>
     <h2>Sessão anterior</h2>
@@ -50,7 +93,8 @@
     <dl id="recovery-body" class="tally"></dl>
     <p class="hint">
       <button id="recovery-go">Restaurar</button>
-      <kbd>Enter</kbd> restaura · <kbd>Esc</kbd> descarta
+      <button id="recovery-discard">Descartar</button>
+      <kbd>Esc</kbd> fecha sem descartar
     </p>
   </div>
 
@@ -68,16 +112,18 @@
       Uma coleção é uma subpasta da pasta de trabalho, e nada além disso. A
       pasta só é criada quando você aplicar.
     </p>
+    <label for="collection-name">Nome da coleção</label>
     <input id="collection-name" type="text" maxlength="64"
            autocomplete="off" autocapitalize="off" spellcheck="false"
            placeholder="porsche">
     <p id="collection-error" class="failure" hidden></p>
-    <p class="hint"><kbd>Enter</kbd> confirma · <kbd>Esc</kbd> cancela</p>
+    <p class="hint"><button id="collection-create" class="primary">Criar coleção</button><kbd>Enter</kbd> confirma · <kbd>Esc</kbd> cancela</p>
   </div>
 
   <div id="move" class="panel" hidden>
     <h2>Mover para</h2>
     <ol id="move-list" class="picker"></ol>
+    <div class="dialog-actions"><button data-command="newCollection">+ Nova coleção</button><button data-command="unassign" data-photo>Remover atribuição</button></div>
     <p class="hint">
       A mesma tecla, fora desta lista, manda direto. <kbd>Alt</kbd> junto manda
       a rajada inteira. <kbd>Esc</kbd> cancela.
@@ -85,14 +131,15 @@
   </div>
 
   <div id="apply" class="panel" hidden>
-    <h2>Aplicar</h2>
+    <h2>Revisar e aplicar</h2>
+    <p id="apply-scope" class="muted">Confira a gravação de marcações e o destino dos arquivos.</p>
     <dl id="apply-body" class="tally"></dl>
     <div id="apply-blockers" class="blockers" hidden>
       <p class="failure">Isso impede a aplicação. Nada foi tocado.</p>
       <ul id="apply-blocker-list"></ul>
     </div>
     <p class="hint">
-      <button id="apply-go">Aplicar</button>
+      <button id="apply-go" class="primary">Aplicar alterações</button>
       <kbd>Enter</kbd> aplica · <kbd>Esc</kbd> cancela
     </p>
   </div>
@@ -104,7 +151,8 @@
   </div>
 
   <div id="settings" class="panel" hidden>
-    <h2>Compatibilidade do XMP</h2>
+    <h2>Ajustes</h2>
+    <h3>Compatibilidade do XMP</h3>
     <p>
       Lightroom e darktable discordam do nome do arquivo sidecar. Escolha o que
       o seu programa lê — a marcação gravada é idêntica nos três casos.
@@ -136,6 +184,7 @@
       <button id="keymap-reset">Restaurar padrão</button>
       <kbd>Esc</kbd> fecha
     </p>
+    <details class="diagnostics"><summary>Diagnóstico de navegação</summary><p id="latency">Navegue por pelo menos cinco fotos para medir o tempo entre a tecla e a pintura.</p></details>
   </div>
 
   <div id="help" class="panel" hidden>
@@ -153,5 +202,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="grid.js"></script>
 </body>
 </html>

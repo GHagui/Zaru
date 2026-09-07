@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 /// Actions that take a single key. The order is the order they are listed in.
 pub const ACTIONS: &[(&str, &str)] = &[
+    ("grid", "alternar foto / grade"),
     ("prev", "foto anterior"),
     ("next", "próxima foto"),
     ("star1", "1 estrela"),
@@ -37,6 +38,8 @@ pub const ACTIONS: &[(&str, &str)] = &[
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Keymap {
+    #[serde(default)]
+    pub grid: String,
     pub prev: String,
     pub next: String,
     pub star1: String,
@@ -69,6 +72,7 @@ impl Default for Keymap {
     /// for the one action that happens most.
     fn default() -> Self {
         Keymap {
+            grid: "e".into(),
             prev: "k".into(),
             next: "h".into(),
             star1: "a".into(),
@@ -111,6 +115,7 @@ impl Keymap {
 
     pub fn get(&self, action: &str) -> Option<String> {
         let key = match action {
+            "grid" => &self.grid,
             "prev" => &self.prev,
             "next" => &self.next,
             "star1" => &self.star1,
@@ -156,6 +161,7 @@ impl Keymap {
 
         let key = key.to_string();
         match action {
+            "grid" => self.grid = key,
             "prev" => self.prev = key,
             "next" => self.next = key,
             "star1" => self.star1 = key,

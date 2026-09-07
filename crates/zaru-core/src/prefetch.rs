@@ -77,7 +77,9 @@ impl Prefetch {
         state.cache.clear();
         state.previous.clear();
         state.warm.clear();
-        state.serve.clear();
+        let abandoned: Vec<_> = state.serve.drain(..).collect();
+        drop(state);
+        for (_, respond) in abandoned { respond(None); }
     }
 
     /// Sets the window to exactly these frames, in this order of urgency.
@@ -198,4 +200,3 @@ fn read_range(frame: &Frame) -> std::io::Result<Vec<u8>> {
     file.read_exact(&mut buf)?;
     Ok(buf)
 }
-

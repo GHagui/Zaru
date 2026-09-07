@@ -21,6 +21,10 @@ pub struct Recovery {
     pub marks: Vec<Marks>,
     pub collections: Vec<String>,
     pub assigned: Vec<Option<usize>>,
+    #[serde(default)]
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub saved_marks: Vec<Marks>,
 }
 
 /// What the front end shows before asking whether to restore.
@@ -33,6 +37,27 @@ pub struct RecoveryOffer {
 }
 
 impl Recovery {
+    pub fn resolved_paths(&self) -> Vec<PathBuf> {
+        let paths = if self.paths.is_empty() { &self.photos } else { &self.paths };
+        paths.iter().map(|p| Path::new(&self.folder).join(p)).collect()
+    }
+
+    pub fn valid_for(&self, folder: &Path) -> bool {
+        if Path::new(&self.folder) != folder || !self.matches(&self.photos)
+            || (!self.paths.is_empty() && self.paths.len() != self.photos.len())
+            || (!self.saved_marks.is_empty() && self.saved_marks.len() != self.photos.len()) { return false; }
+        let Ok(root) = folder.canonicalize() else { return false };
+        let paths = self.resolved_paths();
+        let relative = if self.paths.is_empty() { &self.photos } else { &self.paths };
+        if relative.iter().any(|p| Path::new(p).components().any(|c| !matches!(c, std::path::Component::Normal(_)))) { return false; }
+        if paths.iter().zip(&self.photos).any(|(p, name)| !p.is_file() || p.file_name().map(|n| n != name.as_str()).unwrap_or(true)
+            || !p.canonicalize().map(|p| p.starts_with(&root)).unwrap_or(false)) { return false; }
+        let expected: std::collections::BTreeSet<_> = paths.iter().filter(|p| p.parent() == Some(folder)).cloned().collect();
+        let Ok(entries) = fs::read_dir(folder) else { return false };
+        let actual: std::collections::BTreeSet<_> = entries.filter_map(Result::ok).map(|e| e.path())
+            .filter(|p| p.extension().map(|e| e.eq_ignore_ascii_case("cr3")).unwrap_or(false)).collect();
+        expected == actual
+    }
     pub fn offer(&self) -> RecoveryOffer {
         RecoveryOffer {
             marked: self.marks.iter().filter(|m| !m.is_empty()).count(),
@@ -108,6 +133,7 @@ mod tests {
             marks: vec![Marks::default(), Marks::default()],
             collections: vec![],
             assigned: vec![None, None],
+            paths: vec![], saved_marks: vec![],
         };
         assert!(saved.matches(&["a.CR3".to_string(), "b.CR3".to_string()]));
         // A photo added, removed or renamed and the indices mean nothing.
@@ -123,6 +149,7 @@ mod tests {
             marks: vec![Marks::default()],
             collections: vec![],
             assigned: vec![Some(3)],
+            paths: vec![], saved_marks: vec![],
         };
         assert!(!saved.matches(&["a.CR3".to_string()]));
     }

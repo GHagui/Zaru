@@ -14,6 +14,14 @@ use zaru_cr3::Cr3Info;
 use zaru_xmp::{Marks, SidecarStyle, REJECTED};
 
 use crate::collections::{validate, MAX_COLLECTIONS};
+use crate::recovery::Recovery;
+
+/// Frames closer together than this belong to the same burst.
+///
+/// A camera on continuous drive puts eighty milliseconds between frames; a
+/// photographer pressing the shutter again deliberately takes longer than this.
+/// The gap is what separates "twelve tries at one corner" from "the next car".
+const BURST_GAP_MS: i64 = 700;
 
 pub struct Photo {
     pub path: PathBuf,
@@ -30,6 +38,12 @@ pub struct PhotoView {
     pub height: u32,
     pub rotation: u16,
     pub mirrored: bool,
+    /// Which burst this frame belongs to, and where it sits inside it. In a
+    /// motorsport pass the real question is which of twelve tries at one corner
+    /// to keep, so the burst is the unit that matters, not the frame.
+    pub burst: usize,
+    pub burst_index: usize,
+    pub burst_size: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -113,6 +127,10 @@ pub struct Session {
     marks: Vec<Marks>,
     collections: Vec<String>,
     assigned: Vec<Option<usize>>,
+    /// Burst id per photo, plus where each burst starts and how long it is.
+    bursts: Vec<usize>,
+    burst_starts: Vec<usize>,
+    burst_sizes: Vec<usize>,
     undo: Vec<Change>,
     redo: Vec<Change>,
 }
@@ -132,14 +150,19 @@ impl Session {
             photos: self
                 .photos
                 .iter()
-                .map(|p| {
+                .enumerate()
+                .map(|(i, p)| {
                     let (rotation, mirrored) = p.info.rotation();
+                    let burst = self.bursts[i];
                     PhotoView {
                         name: p.name.clone(),
                         width: p.info.preview.width,
                         height: p.info.preview.height,
                         rotation,
                         mirrored,
+                        burst,
+                        burst_index: i - self.burst_starts[burst],
+                        burst_size: self.burst_sizes[burst],
                     }
                 })
                 .collect(),
@@ -176,14 +199,59 @@ impl Session {
             ));
         }
 
+        let (bursts, burst_starts, burst_sizes) = group_bursts(&photos);
         self.folder = folder.to_path_buf();
         self.marks = vec![Marks::default(); photos.len()];
         self.assigned = vec![None; photos.len()];
         self.collections.clear();
+        self.bursts = bursts;
+        self.burst_starts = burst_starts;
+        self.burst_sizes = burst_sizes;
         self.photos = photos;
         self.undo.clear();
         self.redo.clear();
         Ok(())
+    }
+
+    // ------------------------------------------------------------ recovery
+
+    pub fn folder(&self) -> &Path {
+        &self.folder
+    }
+
+    pub fn names(&self) -> Vec<String> {
+        self.photos.iter().map(|p| p.name.clone()).collect()
+    }
+
+    /// True when there is anything worth saving against a crash.
+    pub fn has_work(&self) -> bool {
+        self.marks.iter().any(|m| !m.is_empty())
+            || self.assigned.iter().any(|a| a.is_some())
+            || !self.collections.is_empty()
+    }
+
+    pub fn snapshot(&self) -> Recovery {
+        Recovery {
+            folder: self.folder.display().to_string(),
+            photos: self.names(),
+            marks: self.marks.clone(),
+            collections: self.collections.clone(),
+            assigned: self.assigned.clone(),
+        }
+    }
+
+    /// Takes back a snapshot, but only if it still describes this folder.
+    /// Undo history is not restored — it belongs to a session that has ended.
+    pub fn restore(&mut self, saved: Recovery) -> bool {
+        if !saved.matches(&self.names()) {
+            return false;
+        }
+        self.marks = saved.marks;
+        self.collections = saved.collections;
+        self.assigned = saved.assigned;
+        self.undo.clear();
+        self.redo.clear();
+        true
     }
 
     // ------------------------------------------------------------- marking
@@ -557,6 +625,37 @@ fn planned_files(
         }
     }
     files.into_iter().collect()
+}
+
+/// Splits the pass into bursts by the gap between shutter times.
+///
+/// A frame with no timestamp gets a burst of its own rather than being folded
+/// into its neighbour: guessing would put an unrelated frame inside a group the
+/// user then judges as one.
+fn group_bursts(photos: &[Photo]) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+    let mut ids = Vec::with_capacity(photos.len());
+    let mut starts: Vec<usize> = Vec::new();
+    let mut sizes: Vec<usize> = Vec::new();
+    let mut previous: Option<i64> = None;
+
+    for (index, photo) in photos.iter().enumerate() {
+        let now = photo.info.captured_ms;
+        let same = match (previous, now) {
+            (Some(before), Some(now)) => now >= before && now - before <= BURST_GAP_MS,
+            _ => false,
+        };
+        if same {
+            let id = sizes.len() - 1;
+            ids.push(id);
+            sizes[id] += 1;
+        } else {
+            ids.push(sizes.len());
+            starts.push(index);
+            sizes.push(1);
+        }
+        previous = now;
+    }
+    (ids, starts, sizes)
 }
 
 /// Probes every file up front, in parallel.

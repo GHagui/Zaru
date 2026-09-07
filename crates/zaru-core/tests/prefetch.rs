@@ -67,23 +67,28 @@ fn an_index_past_the_end_answers_rather_than_hanging() {
 }
 
 #[test]
-fn sliding_warms_the_window_and_drops_what_fell_far_behind() {
+fn focusing_warms_the_window_and_drops_what_left_it() {
     let (frames, _) = frames(40);
     let pool = Prefetch::new();
     pool.load(frames);
 
-    pool.slide(20);
-    let cached = wait_for(&pool, &[17, 18, 19, 20, 21, 22, 23, 24, 25]);
-    for i in [17, 18, 19, 20, 21, 22, 23, 24, 25] {
-        assert!(cached.contains(&i), "frame {i} should be warm, got {cached:?}");
+    let window: Vec<usize> = vec![20, 21, 22, 23, 24, 25, 19, 18, 17];
+    pool.focus(&window);
+    let cached = wait_for(&pool, &window);
+    for i in &window {
+        assert!(cached.contains(i), "frame {i} should be warm, got {cached:?}");
     }
 
-    pool.slide(35);
-    wait_for(&pool, &[35, 36, 37, 38, 39]);
+    // A window nowhere near the last one: the previous frames survive exactly
+    // one more round, then go.
+    let far: Vec<usize> = vec![35, 36, 37, 38, 39];
+    pool.focus(&far);
+    wait_for(&pool, &far);
+    pool.focus(&far);
     let cached = pool.cached();
     assert!(
-        cached.iter().all(|i| *i >= 29),
-        "frames far behind should have been evicted, got {cached:?}"
+        cached.iter().all(|i| far.contains(i)),
+        "frames outside two consecutive windows should be gone, got {cached:?}"
     );
 }
 
@@ -93,7 +98,7 @@ fn opening_another_folder_drops_the_previous_cache() {
     let pool = Prefetch::new();
     pool.load(frames.clone());
 
-    pool.slide(0);
+    pool.focus(&[0, 1, 2]);
     wait_for(&pool, &[0, 1, 2]);
     assert!(!pool.cached().is_empty());
 

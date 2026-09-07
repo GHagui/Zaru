@@ -9,11 +9,15 @@
 <body class="idle">
   <header class="bar bar-top">
     <span id="folder" class="folder">Zaru</span>
+    <span id="filter-chip" class="chip chip-filter" hidden></span>
+    <span id="burst" class="burst"></span>
     <span id="counter" class="counter"></span>
   </header>
 
   <main id="stage">
     <div id="ring"></div>
+    <div id="divider" hidden></div>
+    <span id="pin-tag" class="pane-tag" hidden>fixada</span>
 
     <div id="empty" class="card">
       <h1>Zaru</h1>
@@ -32,9 +36,31 @@
     <span id="name" class="name"></span>
     <span class="spacer"></span>
     <span id="collection" class="chip chip-collection" hidden></span>
+    <span id="zoom" class="zoom" hidden></span>
     <span id="latency" class="latency" title="tempo entre a tecla e a pintura"></span>
     <button id="config">Ajustes</button>
   </footer>
+
+  <div id="recovery" class="panel" hidden>
+    <h2>Sessão anterior</h2>
+    <p>
+      A última passada nesta pasta não chegou a ser aplicada. As marcações
+      ficaram guardadas.
+    </p>
+    <dl id="recovery-body" class="tally"></dl>
+    <p class="hint">
+      <button id="recovery-go">Restaurar</button>
+      <kbd>Enter</kbd> restaura · <kbd>Esc</kbd> descarta
+    </p>
+  </div>
+
+  <div id="filter" class="panel" hidden>
+    <h2>Mostrar</h2>
+    <ol id="filter-list" class="picker"></ol>
+    <p class="hint">
+      Restringe a navegação. <kbd>Esc</kbd> cancela.
+    </p>
+  </div>
 
   <div id="newCollection" class="panel" hidden>
     <h2>Nova coleção</h2>
@@ -104,19 +130,28 @@
     <dl class="keys">
       <dt>K</dt><dd>foto anterior</dd>
       <dt>H</dt><dd>próxima foto</dd>
+      <dt>Shift+K / Shift+H</dt><dd>rajada anterior / próxima</dd>
       <dt>A R S T G</dt><dd>1 a 5 estrelas; a mesma tecla zera</dd>
       <dt>Espaço</dt><dd>etiqueta verde</dd>
       <dt>Backspace</dt><dd>rejeita e avança</dd>
+      <dt>Z</dt><dd>alterna 1:1 e ajustado</dd>
+      <dt>V</dt><dd>fixa esta foto para comparar; de novo solta</dd>
+      <dt>F</dt><dd>filtrar o que aparece</dd>
       <dt>N</dt><dd>nova coleção</dd>
       <dt>M</dt><dd>mover para uma coleção</dd>
       <dt>Ctrl+Z</dt><dd>desfaz</dd>
       <dt>Ctrl+Shift+Z</dt><dd>refaz</dd>
       <dt>Ctrl+Enter</dt><dd>aplicar: grava os .xmp e move os arquivos</dd>
+      <dt>Esc</dt><dd>volta ao enquadramento inteiro</dd>
       <dt>O</dt><dd>abrir pasta</dd>
       <dt>C</dt><dd>ajustes</dd>
       <dt>?</dt><dd>estas teclas</dd>
     </dl>
-    <p class="hint"><kbd>Esc</kbd> fecha</p>
+    <p class="hint">
+      A roda do mouse dá zoom onde o cursor está, e arrastar move a foto. O
+      zoom não se perde ao mudar de foto — é o que deixa comparar o mesmo canto
+      ao longo de uma rajada.
+    </p>
   </div>
 
   <script src="app.js"></script>

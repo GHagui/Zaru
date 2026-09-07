@@ -44,11 +44,15 @@ function frame() {
 }
 
 const stub = (frameUrl) => `
+const BURST = 4;
 const photos = Array.from({ length: 1240 }, (_, i) => ({
   name: "IMG_" + (4820 + i) + ".CR3",
   width: 6000, height: 4000,
   rotation: i === 3 ? 90 : 0,
   mirrored: false,
+  burst: Math.floor(i / BURST),
+  burstIndex: i % BURST,
+  burstSize: BURST,
 }));
 const marks = photos.map(() => ({ rating: 0, label: null }));
 const assigned = photos.map(() => null);
@@ -63,7 +67,11 @@ const commands = {
   }),
   get_settings: () => settings,
   set_settings: (a) => (settings = a.settings),
-  set_index: () => {},
+  focus: () => {},
+  checkpoint: () => {},
+  recovery_offer: () => null,
+  restore_session: () => null,
+  discard_recovery: () => {},
   set_star: ({ index, stars }) => {
     marks[index].rating = marks[index].rating === stars ? 0 : stars;
     return at(index);
@@ -156,6 +164,34 @@ window.__TAURI__ = {
 
   await press("k", 22);
   await shot("portrait");
+
+  // Zoom by wheel, then pan by drag, then back to fit.
+  await press("h", 4);
+  const stage = await page.locator("#stage").boundingBox();
+  await page.mouse.move(stage.x + stage.width * 0.42, stage.y + stage.height * 0.3);
+  for (let i = 0; i < 14; i++) await page.mouse.wheel(0, -120);
+  await page.waitForTimeout(250);
+  await shot("zoom");
+
+  await page.mouse.down();
+  await page.mouse.move(stage.x + stage.width * 0.6, stage.y + stage.height * 0.55, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  await shot("zoom-panned");
+
+  // The pinned frame keeps the same zoom, which is the point of comparing.
+  await press("v");
+  await press("h");
+  await shot("compare");
+  await press("v");
+  await press("Escape");
+
+  await press("f");
+  await shot("filter");
+  await press("3");
+  await shot("filtered");
+  await press("f");
+  await press("1");
 
   // Phase 3: a collection, the picker, and the Apply preview.
   await press("n");

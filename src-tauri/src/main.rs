@@ -9,13 +9,15 @@
 //! tag and the WebView's own image pipeline does the work.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use zaru_core::{
-    ApplyPlan, ApplyReport, Frame, PhotoChange, Prefetch, Session, SessionView, Settings,
+    ApplyPlan, ApplyReport, Frame, PhotoChange, Prefetch, Recovery, RecoveryOffer, Session,
+    SessionView, Settings,
 };
 
 /// The colour Zaru puts on a photo. `xmp:Label` holds one colour per photo,
@@ -27,6 +29,9 @@ struct AppState {
     prefetch: Prefetch,
     settings: Mutex<Settings>,
     config_dir: PathBuf,
+    /// Set by anything that changes a mark, cleared by a checkpoint. Saving on
+    /// every keystroke would put a file write in the culling loop.
+    dirty: AtomicBool,
 }
 
 impl AppState {
@@ -36,6 +41,7 @@ impl AppState {
             prefetch: Prefetch::new(),
             settings: Mutex::new(Settings::load(&config_dir)),
             config_dir,
+            dirty: AtomicBool::new(false),
         }
     }
 }
@@ -54,7 +60,7 @@ fn open_folder(state: State<'_, AppState>, path: String) -> Result<SessionView, 
     let mut session = state.session.lock().unwrap();
     session.open(Path::new(&path))?;
     reload_frames(&state, &session);
-    state.prefetch.slide(0);
+    state.dirty.store(false, Ordering::Relaxed);
     Ok(session.view())
 }
 
@@ -76,35 +82,46 @@ fn reload_frames(state: &AppState, session: &Session) {
 }
 
 /// Navigation itself never crosses this boundary — the front end swaps between
-/// images it already holds. This only tells the pool where the window is now.
+/// images it already holds. This only says which frames to keep ready.
+///
+/// The front end sends the frames rather than a position, because with a filter
+/// on, "the next five photos" is a walk through a subset and the neighbours in
+/// the file list are not the neighbours in the pass.
 #[tauri::command]
-fn set_index(state: State<'_, AppState>, index: usize) {
-    state.prefetch.slide(index);
+fn focus(state: State<'_, AppState>, frames: Vec<usize>) {
+    state.prefetch.focus(&frames);
 }
 
 #[tauri::command]
 fn set_star(state: State<'_, AppState>, index: usize, stars: i8) -> Option<PhotoChange> {
-    state.session.lock().unwrap().set_star(index, stars)
+    changed(&state, state.session.lock().unwrap().set_star(index, stars))
 }
 
 #[tauri::command]
 fn toggle_reject(state: State<'_, AppState>, index: usize) -> Option<PhotoChange> {
-    state.session.lock().unwrap().toggle_reject(index)
+    changed(&state, state.session.lock().unwrap().toggle_reject(index))
 }
 
 #[tauri::command]
 fn toggle_label(state: State<'_, AppState>, index: usize) -> Option<PhotoChange> {
-    state.session.lock().unwrap().toggle_label(index, LABEL)
+    changed(&state, state.session.lock().unwrap().toggle_label(index, LABEL))
 }
 
 #[tauri::command]
 fn undo(state: State<'_, AppState>) -> Option<PhotoChange> {
-    state.session.lock().unwrap().undo()
+    changed(&state, state.session.lock().unwrap().undo())
 }
 
 #[tauri::command]
 fn redo(state: State<'_, AppState>) -> Option<PhotoChange> {
-    state.session.lock().unwrap().redo()
+    changed(&state, state.session.lock().unwrap().redo())
+}
+
+fn changed<T>(state: &AppState, outcome: Option<T>) -> Option<T> {
+    if outcome.is_some() {
+        state.dirty.store(true, Ordering::Relaxed);
+    }
+    outcome
 }
 
 #[tauri::command]
@@ -128,6 +145,7 @@ fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settin
 fn new_collection(state: State<'_, AppState>, name: String) -> Result<Vec<String>, String> {
     let mut session = state.session.lock().unwrap();
     session.new_collection(&name)?;
+    state.dirty.store(true, Ordering::Relaxed);
     Ok(session.collections().to_vec())
 }
 
@@ -137,7 +155,50 @@ fn assign(
     index: usize,
     collection: Option<usize>,
 ) -> Option<PhotoChange> {
-    state.session.lock().unwrap().assign(index, collection)
+    changed(&state, state.session.lock().unwrap().assign(index, collection))
+}
+
+/// What the last session left behind for this folder, if it still fits.
+#[tauri::command]
+fn recovery_offer(state: State<'_, AppState>) -> Option<RecoveryOffer> {
+    let session = state.session.lock().unwrap();
+    Recovery::load(&state.config_dir, session.folder())
+        .filter(|saved| saved.matches(&session.names()))
+        .map(|saved| saved.offer())
+}
+
+#[tauri::command]
+fn restore_session(state: State<'_, AppState>) -> Option<SessionView> {
+    let mut session = state.session.lock().unwrap();
+    let saved = Recovery::load(&state.config_dir, session.folder())?;
+    session.restore(saved).then(|| session.view())
+}
+
+#[tauri::command]
+fn discard_recovery(state: State<'_, AppState>) {
+    let session = state.session.lock().unwrap();
+    Recovery::discard(&state.config_dir, session.folder());
+}
+
+/// Writes the scratch copy if anything has changed since the last one.
+///
+/// Called on a timer by the front end rather than after every keystroke: two
+/// thousand marks is a hundred kilobytes, and putting that write in the culling
+/// loop is exactly the kind of latency this app exists to avoid.
+#[tauri::command]
+fn checkpoint(state: State<'_, AppState>) {
+    if !state.dirty.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    let session = state.session.lock().unwrap();
+    if !session.has_work() {
+        return;
+    }
+    if session.snapshot().save(&state.config_dir).is_err() {
+        // Nothing to tell the user: the marks are still in memory, and the next
+        // checkpoint tries again.
+        state.dirty.store(true, Ordering::Relaxed);
+    }
 }
 
 /// What Apply would do. The preview is not decoration: moving files is the only
@@ -156,6 +217,11 @@ fn apply(state: State<'_, AppState>) -> ApplyReport {
     // Some photos live in a subfolder now, so the cached byte ranges point at
     // paths that no longer exist.
     reload_frames(&state, &session);
+    // The marks are on disk in their real home; the scratch copy has no job.
+    if report.error.is_none() {
+        Recovery::discard(&state.config_dir, session.folder());
+        state.dirty.store(false, Ordering::Relaxed);
+    }
     report
 }
 
@@ -191,7 +257,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             open_folder,
-            set_index,
+            focus,
             set_star,
             toggle_reject,
             toggle_label,
@@ -203,6 +269,10 @@ fn main() {
             assign,
             plan,
             apply,
+            recovery_offer,
+            restore_session,
+            discard_recovery,
+            checkpoint,
         ])
         .run(tauri::generate_context!())
         .expect("Zaru failed to start");

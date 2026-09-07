@@ -7,11 +7,13 @@
 
 pub mod collections;
 pub mod prefetch;
+pub mod recovery;
 pub mod session;
 pub mod settings;
 
 pub use collections::MAX_COLLECTIONS;
 pub use prefetch::{Frame, Prefetch};
+pub use recovery::{Recovery, RecoveryOffer};
 pub use session::{
     ApplyPlan, ApplyReport, PhotoChange, PhotoView, PlannedMove, Session, SessionView, WriteReport,
 };

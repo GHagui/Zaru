@@ -26,7 +26,7 @@ arquivos e o acabamento visual.
 tem display, e sem isso a lógica das fases 1 e 2 ficaria sem teste nenhum.
 
 ```
-cargo test --workspace --exclude zaru      # 56 testes, sem webview
+cargo test --workspace --exclude zaru      # 68 testes, sem webview
 cargo run --bin zaru-probe -- example_cr3.CR3 -o preview.jpg
 cargo run --bin zaru-mark  -- IMG_4821.CR3 --rating 4 --label Green
 cargo build --release --target x86_64-pc-windows-gnu
@@ -50,7 +50,12 @@ binário para outro computador.
 | `A` `R` `S` `T` `G` | 1 a 5 estrelas; a mesma tecla zera |
 | `Espaço` | etiqueta verde |
 | `Backspace` | rejeita e avança |
+| `Shift+K` / `Shift+H` | rajada anterior / próxima |
+| `Z` | alterna 1:1 e ajustado |
+| `V` | fixa esta foto para comparar |
+| `F` | filtra o que aparece |
 | `N` / `M` | nova coleção / mover para uma coleção |
+| `Esc` | volta ao enquadramento inteiro |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | desfaz / refaz |
 | `Ctrl+Enter` | aplicar |
 | `O` / `C` / `?` | abrir pasta / ajustes / teclas |
@@ -121,6 +126,66 @@ Dois detalhes que o container esconde:
   aparece deitada.
 - **Nem todo CR3 põe um JPEG no trak #1.** A varredura de tracks é protegida
   pelo magic `FF D8 FF` e cai para a box `PRVW` quando nenhum track serve.
+
+## Inspeção
+
+A prévia tem 6000×4000 e a tela mostra ~1400 px: 23% de escala. Isso decide
+enquadramento, não decide se o autofoco pegou o capacete do piloto. Daí o zoom.
+
+Roda do mouse dá zoom no ponto sob o cursor, arrastar move, `Z` alterna entre
+ajustado e 1:1, `Esc` volta ao inteiro. **O zoom não se perde ao trocar de
+foto** — de propósito: ampliar onde estava o ponto de foco e percorrer a rajada
+a 100% é a razão de o zoom existir, e zerar a cada tecla o tornaria inútil
+justamente para isso.
+
+Não custa decodificação nenhuma. O bitmap 6000×4000 já está no WebView; zoom é
+uma transformação sobre o que já existe.
+
+`V` fixa a foto atual ao lado da passada. Os dois painéis dividem **um** zoom e
+**um** pan, que é o que faz a comparação significar alguma coisa: o mesmo canto
+dos dois quadros, na mesma ampliação. Cada painel recorta o seu — sem isso uma
+imagem ampliada transborda quatro mil pixels e as duas se pintam por cima.
+
+## Rajadas
+
+`CMT2` é o IFD Exif e carrega `DateTimeOriginal` mais `SubSecTimeOriginal`.
+Quadros com menos de 700 ms entre si são a mesma rajada: uma câmera em disparo
+contínuo põe oitenta milissegundos entre quadros, e apertar o botão de novo
+demora mais que isso.
+
+`Shift+H` e `Shift+K` pulam de rajada em rajada. Numa passada de automobilismo
+a unidade de decisão é a rajada, não o quadro — você quer *uma* foto daquele
+carro naquela curva, não um veredito sobre as doze.
+
+Quadro sem data forma rajada própria em vez de ser dobrado no vizinho: chutar
+poria um quadro alheio dentro de um grupo que o usuário depois julga como um.
+
+## Filtro
+
+`F` restringe a navegação: sem marcação, com nota, 5 estrelas, verde,
+rejeitadas, em coleção, sem coleção. A segunda passada deixa de ser 1240 fotos.
+
+Um filtro é uma lista de índices, e toda navegação anda por ela. É também por
+isso que o prefetch recebe do front-end **quais** quadros manter, em vez de
+deduzir a partir de uma posição: com filtro ligado, "as próximas cinco" é uma
+caminhada por um subconjunto, e vizinho na lista de arquivos não é vizinho na
+passada.
+
+Desfazer sobrepõe o filtro. Se a foto reparada está escondida, o filtro cede —
+o reparo importa mais que a vista.
+
+## Recuperação
+
+Duas mil fotos e uma hora de julgamento vivem em memória até o Aplicar. Uma
+cópia de rascunho vai para o diretório de configuração a cada três segundos,
+quando há algo mudado — nunca a cada tecla, porque essa escrita não tem nada
+que fazer dentro do laço de triagem.
+
+Reabrir a pasta oferece o que ficou, e aceita não como resposta. O arquivo é
+apagado no Aplicar. Isso **não** é um catálogo: a pasta continua sendo a única
+verdade, o arquivo não guarda nada que não esteja prestes a virar sidecar, e
+ele é validado contra a lista de fotos antes de ser oferecido — uma foto a mais
+ou a menos e os índices não querem dizer nada.
 
 ## Coleções
 
@@ -258,6 +323,13 @@ arquivo pequeno a mais por foto.
 Não apaga arquivo, nunca. Rejeitar é uma anotação no XMP e nada além disso — o
 que fazer com as rejeitadas depois é decisão sua, com as suas ferramentas.
 Também não revela RAW, não edita, não mantém catálogo e não importa cartão.
+
+## Integração contínua
+
+`.github/workflows/ci.yml` roda os testes e o clippy no Linux e **compila o
+`.exe` do Windows por cross-compile no mesmo runner** — o app linka contra o
+WebView2, não contra um webview do sistema, então mingw basta. O artefato
+`Zaru-win64` sai pronto de cada push.
 
 ## Licença
 

@@ -108,6 +108,15 @@ html, body {
 }
 .name { font-weight: 500; font-stretch: 87%; }
 .latency { font-size: 12px; font-weight: 400; font-stretch: 87%; }
+.burst { font-weight: 500; font-stretch: 87%; font-variant-numeric: tabular-nums; }
+.zoom {
+  padding: 2px 8px;
+  border: var(--rule) solid var(--ink);
+  background: #FFF;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.chip-filter { background: #FFF; }
 
 /* ------------------------------------------------------- rating and chips */
 
@@ -148,6 +157,8 @@ body.idle .counter,
 body.idle .meter,
 body.idle .name,
 body.idle .latency,
+body.idle .burst,
+body.idle .zoom,
 body.idle .chip { display: none; }
 
 /* One flash, under 120ms, to answer "did that register?" — and nothing else
@@ -173,6 +184,8 @@ body.idle .chip { display: none; }
 .picker li { display: contents; }
 .picker b { font-weight: 500; font-stretch: 87%; font-variant-numeric: tabular-nums; }
 .picker .none { grid-column: 1 / -1; font-stretch: 87%; }
+.picker .chosen { font-weight: 700; }
+.picker .chosen::after { content: " ·  ativo"; font-weight: 500; font-stretch: 87%; }
 
 input[type="text"] {
   display: block;
@@ -229,14 +242,57 @@ button[disabled]:active { transform: none; }
 /* The photo gets no border, no shadow and no frame. It is the content; all the
    rest is the apparatus. And no transition of any kind: a fade between frames
    is latency wearing a costume. */
+/* The clipping box is the pane; the image inside it is what moves and scales.
+   Nothing ever escapes its half of the stage. */
+#ring .frame {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+#ring .frame.shown { visibility: visible; }
+
 #ring img {
   position: absolute;
   top: 50%;
   left: 50%;
   object-fit: contain;
-  visibility: hidden;
 }
-#ring img.shown { visibility: visible; }
+
+/* Compare mode: two panes sharing one zoom and one pan, so the same corner of
+   both frames is under the eye at the same magnification. The rule between
+   them is the same 3px rule as everywhere else. */
+#divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: var(--rule);
+  margin-left: calc(var(--rule) / -2);
+  background: var(--ink);
+  z-index: 1;
+}
+#divider[hidden] { display: none; }
+
+.pane-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  padding: 2px 9px;
+  border: var(--rule) solid var(--ink);
+  background: var(--chrome);
+  font-weight: 700;
+  font-stretch: 87%;
+}
+.pane-tag[hidden] { display: none; }
+
+/* The photo is grabbable at any zoom; panning is clamped, not disabled, so the
+   affordance never lies about being there. */
+#stage { cursor: grab; }
+body.dragging #stage { cursor: grabbing; }
+body.idle #stage { cursor: default; }
 
 /* ------------------------------------------------------ panels and cards */
 
